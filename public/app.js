@@ -765,6 +765,8 @@ function startDrag() {
   void ghost.offsetWidth;
   ghost.classList.add('lifted');
   sizeGhostFor(drag, null);
+  const held = drag;
+  requestAnimationFrame(() => tiltLoop(held));
   drag.src.classList.add('dragging-src');
   // Dragging from inside a pile viewer: close the sheet so the table is reachable.
   if (drag.src.closest('#sheet')) closeSheet();
@@ -796,7 +798,38 @@ function sizeGhostFor(d, t) {
   if (tw) d.size = tw;
   const s = (d.size / d.w) * LIFT;
   d.scale = s;
-  d.ghost.style.transform = `rotate(2deg) scale(${s.toFixed(3)})`;
+  paintGhost(d);
+}
+
+// A carried card leans with its momentum: the leading edge dips toward the
+// table and it swings a little around the finger, then settles when you stop.
+// The ghost's transform transition smooths every change, so it eases like a
+// real card in the air.
+const TILT_MAX = 12; // degrees
+function paintGhost(d) {
+  const t = d.tilt || { x: 0, y: 0, z: 0 };
+  d.ghost.style.transform = `perspective(900px) rotateX(${t.x.toFixed(2)}deg) rotateY(${t.y.toFixed(2)}deg) rotate(${(2 + t.z).toFixed(2)}deg) scale(${d.scale.toFixed(3)})`;
+}
+function tiltLoop(d) {
+  if (!d || drag !== d || !d.ghost || reduceMotion.matches) return;
+  const now = performance.now();
+  const sm = d.samples;
+  let vx = 0, vy = 0;
+  if (sm.length > 1 && now - sm[sm.length - 1].t < 60) {
+    const a = sm[0], b = sm[sm.length - 1];
+    const dt = Math.max(16, b.t - a.t);
+    vx = (b.x - a.x) / dt; vy = (b.y - a.y) / dt; // px per ms
+  }
+  const clamp = (v, m) => Math.max(-m, Math.min(m, v));
+  // Where the finger holds the card: held above centre, sideways motion swings the bottom back.
+  const grip = (d.oy / d.h - 0.5) * 2;
+  const want = { x: clamp(-vy * 7, TILT_MAX), y: clamp(vx * 7, TILT_MAX), z: clamp(-vx * grip * 4, 6) };
+  const t = d.tilt || (d.tilt = { x: 0, y: 0, z: 0 });
+  if (Math.abs(want.x - t.x) + Math.abs(want.y - t.y) + Math.abs(want.z - t.z) > 0.15) {
+    t.x = want.x; t.y = want.y; t.z = want.z;
+    paintGhost(d);
+  }
+  requestAnimationFrame(() => tiltLoop(d));
 }
 
 function dropTargetAt(x, y) {
