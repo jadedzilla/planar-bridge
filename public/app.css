@@ -606,7 +606,7 @@ html, body { background: var(--table); }
     repeating-conic-gradient(from 0deg at 0 100%, var(--thread-c)) right top / var(--r) var(--r),
     repeating-conic-gradient(from 0deg at 100% 0, var(--thread-c)) left bottom / var(--r) var(--r),
     repeating-conic-gradient(from 0deg at 0 0, var(--thread-c)) right bottom / var(--r) var(--r),
-    var(--bind);
+    var(--bind-base, var(--bind));
   background-repeat: no-repeat;
   /* only the ring around the rim shows */
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
@@ -616,8 +616,12 @@ html, body { background: var(--table); }
 }
 /* The binding sits a little proud of the cloth, so a soft shadow falls just inside it. */
 .mat-body::before { box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, inset 0 0 0 7px rgba(0,0,0,.25), inset 0 1px 4px 8px rgba(0,0,0,.2), 0 1px 1px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.35); }
-/* Printed mats usually get a plain dark binding. */
-.mat.has-art .mat-body::after { --bind: color-mix(in srgb, var(--seat, #4a7a68) 8%, #1f2126); --hi: rgba(255,255,255,.11); }
+/* On a custom picture the binding is dyed to match: the picture carries on
+   under the threads, a touch darker, as if the print wraps round the edge. */
+.mat.has-art .mat-body::after {
+  --bind-base: linear-gradient(rgba(0,0,0,.22), rgba(0,0,0,.32)), var(--mat-img) center / cover no-repeat, var(--bind);
+  --hi: rgba(255,255,255,.16); --lo: rgba(0,0,0,.3);
+}
 @media (max-width: 600px) {
   .mat-body::after { --w: 5px; }
   .mat-body::before { box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, inset 0 0 0 5px rgba(0,0,0,.25), inset 0 1px 3px 6px rgba(0,0,0,.2), 0 1px 1px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.35); }
