@@ -104,6 +104,7 @@ $('#codeInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#
 function boot() {
   $('#nameInput').value = savedName();
   renderLandingDecks();
+  fillDeckColors();
   const m = location.pathname.match(/^\/s\/([A-Za-z0-9]{5})/);
   if (m) {
     const code = m[1].toUpperCase();
@@ -978,9 +979,9 @@ function guessDeckName(text, cards) {
 }
 
 // Returns the saved deck, or throws if the device has no room left.
-function saveDeck({ id, name, text, cards }) {
+function saveDeck({ id, name, text, cards, colors }) {
   const decks = loadDecks();
-  const deck = { id: id || 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: name.slice(0, 60), text, cards: packCards(cards), updated: Date.now() };
+  const deck = { id: id || 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: name.slice(0, 60), text, cards: packCards(cards), colors: colors || null, updated: Date.now() };
   const i = decks.findIndex((d) => d.id === deck.id);
   if (i >= 0) decks[i] = deck; else decks.push(deck);
   storeDecks(decks);
@@ -991,40 +992,128 @@ function deleteDeck(id) {
   if (pickedDeckId() === id) setPickedDeck('');
 }
 
+// Home screen deck picker: a shelf of card stacks you scroll sideways.
+// Each deck is a sleeved stack whose height follows its size, with its
+// commander (or first spell) face up on top. The picked deck is lifted.
+const SLEEVES = ['#4f7fd0', '#c0504d', '#4f9a6c', '#8a6cc2', '#d08a3a', '#3f9aa6', '#b5577f'];
+const BASICS = new Set(['plains', 'island', 'swamp', 'mountain', 'forest', 'wastes']);
+function sleeveOf(d) {
+  let h = 0;
+  for (const ch of d.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return SLEEVES[h % SLEEVES.length];
+}
+function faceCardOf(d) {
+  return d.cards.find((c) => c.commander && c.img)
+    || d.cards.find((c) => c.img && !BASICS.has(norm(c.name).replace(/^snow-covered /, '')))
+    || d.cards.find((c) => c.img) || null;
+}
+
+// Colour identity in the usual W U B R G order, shown as the official mana
+// symbols (from Scryfall) in the deck's top-left corner. Colourless decks get {C}.
+// If a symbol can't load, the CSS pip with its letter underneath shows instead.
+const COLOR_ORDER = ['W', 'U', 'B', 'R', 'G'];
+const COLOR_NAME = { W: 'white', U: 'blue', B: 'black', R: 'red', G: 'green', C: 'colorless' };
+function sortColors(set) { return COLOR_ORDER.filter((c) => set.has(c)); }
+function manaPips(colors) {
+  if (!Array.isArray(colors)) return '';
+  const list = colors.length ? colors : ['C'];
+  const label = list.map((c) => COLOR_NAME[c]).join(', ');
+  return `<span class="deck-pips" role="img" aria-label="${label}" title="${label}">${list.map((c) => `<span class="pip pip-${c}">${c}<img src="https://svgs.scryfall.io/card-symbols/${c}.svg" alt="" draggable="false" onerror="this.remove()"></span>`).join('')}</span>`;
+}
+
+// Decks saved before colours were recorded: look their cards up once and store the colours.
+let fillingColors = false;
+async function fillDeckColors() {
+  if (fillingColors) return;
+  const todo = loadDecks().filter((d) => !Array.isArray(d.colors));
+  if (!todo.length) return;
+  fillingColors = true;
+  try {
+    for (const d of todo) {
+      // "Flavor name (Real name)" entries keep the real name in brackets.
+      const names = [...new Set(d.cards.map((c) => { const m = c.name.match(/\(([^()]+)\)$/); return (m ? m[1] : c.name).split(' // ')[0]; }))];
+      const colors = new Set();
+      for (let i = 0; i < names.length; i += 75) {
+        const data = await scryfallCollection(names.slice(i, i + 75).map((name) => ({ name })));
+        for (const c of data.data || []) for (const x of c.color_identity || []) colors.add(x);
+        await sleep(550);
+      }
+      const all = loadDecks();
+      const hit = all.find((x) => x.id === d.id);
+      if (!hit) continue;
+      hit.colors = sortColors(colors);
+      storeDecks(all);
+      if (!$('#landing').hidden) renderLandingDecks();
+    }
+  } catch { /* offline or Scryfall busy: try again next time */ }
+  fillingColors = false;
+}
+
 function renderLandingDecks() {
-  const list = $('#deckList');
+  const shelf = $('#deckList');
+  const scroll = shelf.scrollLeft;
   const decks = loadDecks();
   let pick = pickedDeckId();
   if (pick && !decks.some((d) => d.id === pick)) pick = '';
-  const row = (d) => `
-    <label class="deck-row">
-      <input type="radio" name="deckPick" value="${esc(d.id)}" ${pick === d.id ? 'checked' : ''}>
-      <span class="deck-name">${esc(d.name)}</span>
-      <span class="deck-count">${deckSize(d)} cards</span>
-      <button class="btn small" data-deck-edit="${esc(d.id)}">Edit</button>
-      <button class="btn small danger" data-deck-del="${esc(d.id)}">Delete</button>
+  const tile = (d) => {
+    const face = faceCardOf(d);
+    const on = pick === d.id;
+    return `
+    <label class="deck-tile${on ? ' picked' : ''}">
+      <input class="sr-only" type="radio" name="deckPick" value="${esc(d.id)}" ${on ? 'checked' : ''}>
+      <span class="deck-stack" data-size="${deckSize(d)}" style="--sleeve:${sleeveOf(d)}">
+        <span class="deck-top${face ? '' : ' back'}">${face ? `<img src="${esc(face.img)}" alt="" loading="lazy" draggable="false">` : ''}</span>
+        <span class="deck-qty">${deckSize(d)}</span>
+        ${manaPips(d.colors)}
+      </span>
+      <span class="deck-label">${esc(d.name)}</span>
+      ${on ? `<span class="deck-actions">
+        <button type="button" class="link-btn" data-deck-edit="${esc(d.id)}">Edit</button>
+        <button type="button" class="link-btn danger" data-deck-del="${esc(d.id)}">Delete</button>
+      </span>` : ''}
     </label>`;
-  list.innerHTML = decks.length
-    ? decks.map(row).join('') + `
-      <label class="deck-row">
-        <input type="radio" name="deckPick" value="" ${pick ? '' : 'checked'}>
-        <span class="deck-name muted">No deck, I'll load one at the table</span>
-      </label>`
-    : '<p class="note">No saved decks yet. Import one now so it is ready when you sit down.</p>';
+  };
+  shelf.innerHTML = decks.map(tile).join('') + (decks.length ? `
+    <label class="deck-tile none${pick ? '' : ' picked'}">
+      <input class="sr-only" type="radio" name="deckPick" value="" ${pick ? '' : 'checked'}>
+      <span class="deck-spot">No deck</span>
+      <span class="deck-label">Pick one at the table</span>
+    </label>` : '') + `
+    <button type="button" class="deck-tile add" data-deck-add>
+      <span class="deck-spot"><span class="plus">+</span></span>
+      <span class="deck-label">Import a deck</span>
+    </button>`;
+  shelf.querySelectorAll('.deck-stack').forEach((el) => setStack(el, Number(el.dataset.size)));
+  shelf.scrollLeft = scroll;
+  const picked = decks.find((d) => d.id === pick);
+  $('#deckTabPick').textContent = picked ? '· ' + picked.name : decks.length ? '· none picked' : '';
 }
-$('#deckList').addEventListener('change', (e) => { if (e.target.name === 'deckPick') setPickedDeck(e.target.value); });
+
+// The drawer remembers whether you left it open or tucked away.
+function setDeckDrawer(open) {
+  $('#landing').classList.toggle('decks-hidden', !open);
+  $('#deckTab').setAttribute('aria-expanded', String(open));
+  try { localStorage.setItem('ps:decksOpen', open ? '1' : '0'); } catch {}
+}
+$('#deckTab').onclick = () => setDeckDrawer($('#landing').classList.contains('decks-hidden'));
+try { if (localStorage.getItem('ps:decksOpen') === '0') setDeckDrawer(false); } catch {}
+$('#deckList').addEventListener('change', (e) => {
+  if (e.target.name !== 'deckPick') return;
+  setPickedDeck(e.target.value);
+  renderLandingDecks();
+});
 $('#deckList').addEventListener('click', (e) => {
+  if (e.target.closest('[data-deck-add]')) return openDeckSheet({ mode: 'landing' });
   const edit = e.target.closest('[data-deck-edit]');
   const del = e.target.closest('[data-deck-del]');
   if (!edit && !del) return;
-  e.preventDefault(); // don't also pick the row
+  e.preventDefault(); // don't also pick the tile
   if (edit) return openDeckSheet({ mode: 'landing', editId: edit.dataset.deckEdit });
   if (del.dataset.armed) { deleteDeck(del.dataset.deckDel); return renderLandingDecks(); }
   del.dataset.armed = '1';
-  del.textContent = 'Tap again to delete';
+  del.textContent = 'Sure?';
   setTimeout(() => { if (del.isConnected) { delete del.dataset.armed; del.textContent = 'Delete'; } }, 3000);
 });
-$('#addDeckBtn').onclick = () => openDeckSheet({ mode: 'landing' });
 
 // Right after sitting down: shuffle in the deck picked on the landing page,
 // unless this seat already has cards (rejoining a game in progress).
@@ -1087,7 +1176,7 @@ function openDeckSheet(opts = {}) {
 }
 
 // After the Scryfall lookup: save the deck and/or put it on the table, as the sheet asks.
-function finishImport(text, cards, notFound) {
+function finishImport(text, cards, notFound, colors) {
   const status = $('#deckStatus');
   if (!cards.length) return (status.textContent = 'None of those cards were found on Scryfall.');
   const opts = sheetData || { mode: 'game' };
@@ -1096,7 +1185,7 @@ function finishImport(text, cards, notFound) {
   let deck = null;
   let saveErr = '';
   if (wantSave) {
-    try { deck = saveDeck({ id: opts.editId, name, text, cards }); } catch { saveErr = ' This device has no room left to save it.'; }
+    try { deck = saveDeck({ id: opts.editId, name, text, cards, colors }); } catch { saveErr = ' This device has no room left to save it.'; }
   }
   const missed = notFound.length ? ` Not found: ${notFound.join(', ')}` : '';
   if (opts.mode === 'landing') {
@@ -1253,9 +1342,11 @@ async function importDeck(text) {
   }
   const notFound = [];
   const cards = [];
+  const colors = new Set();
   entries.forEach((e, i) => {
     const sc = resolved.get(i);
     if (!sc) return notFound.push(e.name);
+    for (const c of sc.color_identity || []) colors.add(c);
     const im = imagesOf(sc);
     // Keep the name the player knows it by, with the real name alongside when they differ.
     const alt = norm(e.name) !== norm(sc.name) && !norm(sc.name).startsWith(norm(e.name) + ' //');
@@ -1263,7 +1354,7 @@ async function importDeck(text) {
     for (let k = 0; k < e.qty; k++) cards.push({ name, img: im.img, back: im.back, commander: e.commander });
   });
   $('#deckLoad').disabled = false;
-  finishImport(text, cards, notFound);
+  finishImport(text, cards, notFound, sortColors(colors));
 }
 
 // ---------- Top bar ----------
