@@ -309,8 +309,24 @@ function createMat(p) {
     b.onclick = () => send({ type: 'life', playerId: p.id, delta: Number(b.dataset.life) });
   });
   $('.mat-close', mat).onclick = () => setFocus(p.id);
-  if (window.ResizeObserver) new ResizeObserver(() => sizeCards(mat)).observe($('.mat-body', mat));
+  const body = $('.mat-body', mat);
+  if (window.ResizeObserver) new ResizeObserver(() => { sizeCards(mat); fitStitches(body); }).observe(body);
+  // the binding slides when the hand opens or closes; refit once it settles
+  body.addEventListener('transitionend', (e) => { if (e.pseudoElement === '::after') fitStitches(body); });
   return mat;
+}
+
+// Stitched binding: stretch the stitch spacing on each straight edge a touch
+// so a whole number of stitches fits between the corners, and every row meets
+// its corner stitches cleanly (see .mat-body::after in app.css).
+function fitStitches(body) {
+  const cs = getComputedStyle(body, '::after');
+  const r = parseFloat(cs.getPropertyValue('--r')) || 20;
+  const fit = (len) => (len > 0 ? (len / Math.max(1, Math.round(len / 2.8))).toFixed(4) + 'px' : '2.8px');
+  const w = body.clientWidth - parseFloat(cs.left) - parseFloat(cs.right) - 2 * r;
+  const h = body.clientHeight - parseFloat(cs.top) - parseFloat(cs.bottom) - 2 * r;
+  body.style.setProperty('--spx', fit(w));
+  body.style.setProperty('--spy', fit(h));
 }
 
 // One card size per playmat, shared by the battlefield and the library,
