@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+  <meta name="theme-color" content="#14171c">
+  <meta name="application-name" content="Planar Bridge">
+  <meta name="apple-mobile-web-app-title" content="Planar Bridge">
+  <title>Planar Bridge</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <!-- Landing: create or join a session -->
+  <section id="landing" class="landing" hidden>
+    <div class="landing-card">
+      <h1>Planar Bridge</h1>
+      <p class="muted">A shared table for up to 4 players. The app tracks life totals; you run the rest of the game yourselves.</p>
+      <label class="field">Your name
+        <input id="nameInput" maxlength="24" autocomplete="nickname" placeholder="e.g. Emma">
+      </label>
+      <div class="landing-split">
+        <div class="landing-box">
+          <h2>New session</h2>
+          <label class="field">Starting life
+            <select id="lifeSelect">
+              <option value="20">20 (standard)</option>
+              <option value="30">30 (Brawl)</option>
+              <option value="40">40 (Commander)</option>
+            </select>
+          </label>
+          <button id="createBtn" class="btn primary">Create session</button>
+        </div>
+        <div class="landing-box">
+          <h2>Join a session</h2>
+          <label class="field">Session code
+            <input id="codeInput" maxlength="5" autocapitalize="characters" autocomplete="off" placeholder="ABCDE">
+          </label>
+          <button id="joinBtn" class="btn">Join</button>
+        </div>
+      </div>
+      <p id="landingError" class="error" role="alert"></p>
+    </div>
+  </section>
+
+  <!-- Table -->
+  <section id="game" class="game" hidden>
+    <header class="topbar">
+      <button class="code-chip" id="inviteBtn" title="Copy invite link">
+        <span class="muted">Session</span> <b id="codeLabel"></b> <span class="copy-hint" id="copyHint">Copy link</span>
+      </button>
+      <div class="topbar-actions">
+        <button class="btn small" data-act="deck">Load deck</button>
+        <button class="btn small" data-act="draw">Draw</button>
+        <button class="btn small hide-narrow" data-act="untap">Untap all</button>
+        <button class="btn small hide-narrow" data-act="shuffle">Shuffle</button>
+        <button class="btn small" data-act="log" title="Game log">Log</button>
+        <button class="btn small icon" data-act="more" title="More" aria-label="More">⋯</button>
+      </div>
+    </header>
+    <div id="banner" class="banner" hidden></div>
+    <main id="table" class="table"></main>
+    <footer id="handBar" class="handbar" data-drop="1" data-zone="hand">
+      <div class="hand-label">Your hand <span id="handCount"></span></div>
+      <div id="hand" class="hand"></div>
+    </footer>
+    <aside id="logPanel" class="logpanel" hidden>
+      <div class="logpanel-head"><b>Game log</b><button class="btn small" data-act="log">Close</button></div>
+      <ol id="logList"></ol>
+    </aside>
+  </section>
+
+  <!-- Bottom sheet used for menus, deck import and pile viewers -->
+  <div id="sheetWrap" class="sheet-wrap" hidden>
+    <div class="sheet" id="sheet" role="dialog" aria-modal="true"></div>
+  </div>
+
+  <div id="preview" class="preview" hidden><img alt=""></div>
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

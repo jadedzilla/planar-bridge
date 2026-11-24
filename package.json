@@ -1,0 +1,15 @@
+{
+  "name": "planar-bridge",
+  "version": "1.0.0",
+  "description": "Shared Magic: The Gathering table for up to 4 players",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "author": "",
+  "license": "GPL-3.0-only",
+  "dependencies": {
+    "ws": "^8.23.0"
+  },
+  "private": true
+}
