@@ -580,9 +580,10 @@ html, body { background: var(--table); }
   --bind: color-mix(in srgb, var(--seat, #4a7a68) 10%, #2b2f36);
   /* a stitch: a short length of thread, rounded, between two dark needle holes */
   --stitch: rgba(0,0,0,.4) 0, rgba(255,255,255,.08) .4px, rgba(255,255,255,.22) 1.4px, rgba(255,255,255,.08) 2.4px, rgba(0,0,0,.4) 2.8px;
-  /* the tape: rounded over the outer lip, flat on top, tucked down at the inner stitch */
-  --roll: rgba(0,0,0,.34) 0%, rgba(255,255,255,.07) 12%, rgba(255,255,255,.05) 30%, rgba(255,255,255,.035) 66%, rgba(0,0,0,.05) 80%, rgba(0,0,0,.2) 92%, rgba(0,0,0,.32) 100%;
-  --roll-c: rgba(0,0,0,.32) calc(var(--r) - var(--w) * 1), rgba(0,0,0,.2) calc(var(--r) - var(--w) * 0.92), rgba(0,0,0,.05) calc(var(--r) - var(--w) * 0.8), rgba(255,255,255,.035) calc(var(--r) - var(--w) * 0.66), rgba(255,255,255,.05) calc(var(--r) - var(--w) * 0.3), rgba(255,255,255,.07) calc(var(--r) - var(--w) * 0.12), rgba(0,0,0,.34) calc(var(--r) - var(--w) * 0);
+  /* the tape: rounded over the outer lip, pulled down into each stitch row,
+     and puffed up between them, flat across the middle with rounded shoulders */
+  --roll: rgba(0,0,0,.34) 0%, rgba(255,255,255,.06) 8%, rgba(0,0,0,.24) 20%, rgba(255,255,255,0) 27%, rgba(255,255,255,.075) 36%, rgba(255,255,255,.06) 64%, rgba(255,255,255,0) 73%, rgba(0,0,0,.24) 80%, rgba(0,0,0,.2) 90%, rgba(0,0,0,.32) 100%;
+  --roll-c: rgba(0,0,0,.32) calc(var(--r) - var(--w) * 1), rgba(0,0,0,.2) calc(var(--r) - var(--w) * 0.9), rgba(0,0,0,.24) calc(var(--r) - var(--w) * 0.8), rgba(255,255,255,0) calc(var(--r) - var(--w) * 0.73), rgba(255,255,255,.06) calc(var(--r) - var(--w) * 0.64), rgba(255,255,255,.075) calc(var(--r) - var(--w) * 0.36), rgba(255,255,255,0) calc(var(--r) - var(--w) * 0.27), rgba(0,0,0,.24) calc(var(--r) - var(--w) * 0.2), rgba(255,255,255,.06) calc(var(--r) - var(--w) * 0.08), rgba(0,0,0,.34) calc(var(--r) - var(--w) * 0);
   --inner: calc(var(--r) - var(--w));
   --side: calc(100% - var(--r) * 2);
   --s1: calc(var(--so) - var(--sh) / 2);
