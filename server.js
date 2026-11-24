@@ -29,6 +29,15 @@ const MIME = {
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
   let p = decodeURIComponent(url.pathname);
+  // A player's custom playmat image: /mat/<session code>/<player id>
+  const mm = p.match(/^\/mat\/([A-Z0-9]{5})\/([\w-]{1,64})$/);
+  if (mm) {
+    const room = rooms.get(mm[1]);
+    const pl = room && player(room, mm[2]);
+    if (!pl || !pl.mat) { res.writeHead(404); return res.end(); }
+    res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=86400' });
+    return res.end(pl.mat);
+  }
   if (p === '/' || p.startsWith('/s/')) p = '/index.html';
   const file = path.normalize(path.join(PUBLIC, p));
   if (!file.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
@@ -174,6 +183,7 @@ function viewFor(room, viewerId) {
       color: SEAT_COLORS[p.seat],
       life: p.life,
       shuffles: p.shuffles || 0, // lets every tablet play the shuffle motion
+      mat: p.mat ? p.matV : 0, // custom playmat version, fetched from /mat/<code>/<id>
       connected: p.connected,
       counts: Object.fromEntries(ZONES.map((z) => [z, p.zones[z].length])),
       zones: {
@@ -367,6 +377,17 @@ function handle(ws, msg) {
       if (other) other.pos = target.pos;
       target.pos = pos;
       addLog(room, `${me.name} changed the seating.`);
+      break;
+    }
+    case 'playmat': {
+      // A custom playmat picture, already shrunk to a JPEG on the tablet. null removes it.
+      if (msg.data == null) { me.mat = null; me.matV = (me.matV || 0) + 1; break; }
+      const m = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/.exec(String(msg.data));
+      if (!m) return;
+      const buf = Buffer.from(m[1], 'base64');
+      if (buf.length > 240 * 1024 || buf[0] !== 0xff || buf[1] !== 0xd8) return;
+      me.mat = buf;
+      me.matV = (me.matV || 0) + 1;
       break;
     }
     case 'rename': {
