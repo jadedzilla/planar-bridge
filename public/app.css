@@ -566,29 +566,51 @@ html, body { background: var(--table); }
   background-blend-mode: soft-light, normal, normal;
 }
 
-/* Stitched edge, like a cloth mousepad: a raised overlock binding wraps the
-   rim, made of tight thread loops in the mat's own colour. The loops run
-   across the binding, fan out round the corners, and the binding is shaded
-   as a soft rounded roll lit from above. All gradients, no images. */
+/* Stitched edge, like a cloth mousepad: a flat binding tape wraps the rim,
+   sitting a little proud of the cloth, held by a row of stitches along its
+   outer edge and another along its inner edge. The straight runs are
+   gradients; the stitch rows round each corner are small inline SVG arcs, each
+   with a whole number of stitches so they meet the straight rows cleanly.
+   Lit from above; no images. */
 .mat-body::after {
   --r: 20px;                     /* matches the mat's corner radius */
-  --w: 7px;                      /* binding width */
+  --w: 9px;                      /* binding width */
+  --so: 1.8px;                   /* stitch row: distance in from each edge of the tape */
+  --sh: 1.2px;                   /* stitch row thickness */
   --bind: color-mix(in srgb, var(--seat, #4a7a68) 10%, #2b2f36);
-  --hi: rgba(255,255,255,.13);   /* lit side of a thread */
-  --lo: rgba(0,0,0,.24);         /* gap between threads */
-  --thread: var(--hi) 0, rgba(255,255,255,0) .9px, var(--lo) 1.3px, rgba(0,0,0,0) 2.3px;
-  --thread-c: var(--hi) 0deg, rgba(255,255,255,0) 2.9deg, var(--lo) 4.2deg, rgba(0,0,0,0) 7.5deg; /* 12 loops per corner */
-  --roll: rgba(0,0,0,.34), rgba(255,255,255,.07) 38%, rgba(255,255,255,0) 62%, rgba(0,0,0,.3);
+  /* a stitch: a short length of thread, rounded, between two dark needle holes */
+  --stitch: rgba(0,0,0,.4) 0, rgba(255,255,255,.08) .4px, rgba(255,255,255,.22) 1.4px, rgba(255,255,255,.08) 2.4px, rgba(0,0,0,.4) 2.8px;
+  /* the tape: rounded over the outer lip, flat on top, tucked down at the inner stitch */
+  --roll: rgba(0,0,0,.34) 0%, rgba(255,255,255,.07) 12%, rgba(255,255,255,.05) 30%, rgba(255,255,255,.035) 66%, rgba(0,0,0,.05) 80%, rgba(0,0,0,.2) 92%, rgba(0,0,0,.32) 100%;
+  --roll-c: rgba(0,0,0,.32) calc(var(--r) - var(--w) * 1), rgba(0,0,0,.2) calc(var(--r) - var(--w) * 0.92), rgba(0,0,0,.05) calc(var(--r) - var(--w) * 0.8), rgba(255,255,255,.035) calc(var(--r) - var(--w) * 0.66), rgba(255,255,255,.05) calc(var(--r) - var(--w) * 0.3), rgba(255,255,255,.07) calc(var(--r) - var(--w) * 0.12), rgba(0,0,0,.34) calc(var(--r) - var(--w) * 0);
   --inner: calc(var(--r) - var(--w));
-  --mid: calc(var(--r) - var(--w) * .38);
-  --roll-c: rgba(0,0,0,.3) var(--inner), rgba(255,255,255,0) calc(var(--inner) + var(--w) * .38), rgba(255,255,255,.07) var(--mid), rgba(0,0,0,.34) var(--r); /* same stops as --roll, measured from the inner edge */
   --side: calc(100% - var(--r) * 2);
+  --s1: calc(var(--so) - var(--sh) / 2);
+  --s2: calc(var(--w) - var(--so) - var(--sh) / 2);
+  --st-tl: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'%3E%3Cg transform=''%3E%3Cpath d='M1.80 20A18.20 18.20 0 0 1 20 1.80' pathLength='10' stroke='%23000' stroke-opacity='.4' stroke-width='1.2' stroke-dasharray='.12 .76 .12 0'/%3E%3Cpath d='M1.80 20A18.20 18.20 0 0 1 20 1.80' pathLength='10' stroke='%23fff' stroke-opacity='.1' stroke-width='1.2' stroke-dasharray='0 .12 .76 .12'/%3E%3Cpath d='M1.80 20A18.20 18.20 0 0 1 20 1.80' pathLength='10' stroke='%23fff' stroke-opacity='.12' stroke-width='1.2' stroke-dasharray='0 .3 .4 .3'/%3E%3Cpath d='M7.20 20A12.80 12.80 0 0 1 20 7.20' pathLength='7' stroke='%23000' stroke-opacity='.4' stroke-width='1.2' stroke-dasharray='.12 .76 .12 0'/%3E%3Cpath d='M7.20 20A12.80 12.80 0 0 1 20 7.20' pathLength='7' stroke='%23fff' stroke-opacity='.1' stroke-width='1.2' stroke-dasharray='0 .12 .76 .12'/%3E%3Cpath d='M7.20 20A12.80 12.80 0 0 1 20 7.20' pathLength='7' stroke='%23fff' stroke-opacity='.12' stroke-width='1.2' stroke-dasharray='0 .3 .4 .3'/%3E%3C/g%3E%3C/svg%3E");
+  --st-tr: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'%3E%3Cg transform='rotate(90 10.0 10.0)'%3E%3Cpath d='M1.80 20A18.20 18.20 0 0 1 20 1.80' pathLength='10' stroke='%23000' stroke-opacity='.4' stroke-width='1.2' stroke-dasharray='.12 .76 .12 0'/%3E%3Cpath d='M1.80 20A18.20 18.20 0 0 1 20 1.80' pathLength='10' stroke='%23fff' stroke-opacity='.1' stroke-width='1.2' stroke-dasharray='0 .12 .76 .12'/%3E%3Cpath d='M1.80 20A18.20 18.20 0 0 1 20 1.80' pathLength='10' stroke='%23fff' stroke-opacity='.12' stroke-width='1.2' stroke-dasharray='0 .3 .4 .3'/%3E%3Cpath d='M7.20 20A12.80 12.80 0 0 1 20 7.20' pathLength='7' stroke='%23000' stroke-opacity='.4' stroke-width='1.2' stroke-dasharray='.12 .76 .12 0'/%3E%3Cpath d='M7.20 20A12.80 12.80 0 0 1 20 7.20' pathLength='7' stroke='%23fff' stroke-opacity='.1' stroke-width='1.2' stroke-dasharray='0 .12 .76 .12'/%3E%3Cpath d='M7.20 20A12.80 12.80 0 0 1 20 7.20' pathLength='7' stroke='%23fff' stroke-opacity='.12' stroke-width='1.2' stroke-dasharray='0 .3 .4 .3'/%3E%3C/g%3E%3C/svg%3E");
+  --st-br: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'%3E%3Cg transform='rotate(180 10.0 10.0)'%3E%3Cpath d='M1.80 20A18.20 18.20 0 0 1 20 1.80' pathLength='10' stroke='%23000' stroke-opacity='.4' stroke-width='1.2' stroke-dasharray='.12 .76 .12 0'/%3E%3Cpath d='M1.80 20A18.20 18.20 0 0 1 20 1.80' pathLength='10' stroke='%23fff' stroke-opacity='.1' stroke-width='1.2' stroke-dasharray='0 .12 .76 .12'/%3E%3Cpath d='M1.80 20A18.20 18.20 0 0 1 20 1.80' pathLength='10' stroke='%23fff' stroke-opacity='.12' stroke-width='1.2' stroke-dasharray='0 .3 .4 .3'/%3E%3Cpath d='M7.20 20A12.80 12.80 0 0 1 20 7.20' pathLength='7' stroke='%23000' stroke-opacity='.4' stroke-width='1.2' stroke-dasharray='.12 .76 .12 0'/%3E%3Cpath d='M7.20 20A12.80 12.80 0 0 1 20 7.20' pathLength='7' stroke='%23fff' stroke-opacity='.1' stroke-width='1.2' stroke-dasharray='0 .12 .76 .12'/%3E%3Cpath d='M7.20 20A12.80 12.80 0 0 1 20 7.20' pathLength='7' stroke='%23fff' stroke-opacity='.12' stroke-width='1.2' stroke-dasharray='0 .3 .4 .3'/%3E%3C/g%3E%3C/svg%3E");
+  --st-bl: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'%3E%3Cg transform='rotate(270 10.0 10.0)'%3E%3Cpath d='M1.80 20A18.20 18.20 0 0 1 20 1.80' pathLength='10' stroke='%23000' stroke-opacity='.4' stroke-width='1.2' stroke-dasharray='.12 .76 .12 0'/%3E%3Cpath d='M1.80 20A18.20 18.20 0 0 1 20 1.80' pathLength='10' stroke='%23fff' stroke-opacity='.1' stroke-width='1.2' stroke-dasharray='0 .12 .76 .12'/%3E%3Cpath d='M1.80 20A18.20 18.20 0 0 1 20 1.80' pathLength='10' stroke='%23fff' stroke-opacity='.12' stroke-width='1.2' stroke-dasharray='0 .3 .4 .3'/%3E%3Cpath d='M7.20 20A12.80 12.80 0 0 1 20 7.20' pathLength='7' stroke='%23000' stroke-opacity='.4' stroke-width='1.2' stroke-dasharray='.12 .76 .12 0'/%3E%3Cpath d='M7.20 20A12.80 12.80 0 0 1 20 7.20' pathLength='7' stroke='%23fff' stroke-opacity='.1' stroke-width='1.2' stroke-dasharray='0 .12 .76 .12'/%3E%3Cpath d='M7.20 20A12.80 12.80 0 0 1 20 7.20' pathLength='7' stroke='%23fff' stroke-opacity='.12' stroke-width='1.2' stroke-dasharray='0 .3 .4 .3'/%3E%3C/g%3E%3C/svg%3E");
   content: ""; position: absolute; pointer-events: none; z-index: 0;
   top: var(--mt); right: var(--mr); bottom: var(--mb); left: var(--ml);
   border-radius: var(--r);
   padding: var(--w);
   background:
-    /* rounded roll shading: straight runs, then the four corners */
+    /* stitch rows, running clockwise; each straight row starts on a stitch
+       where it leaves a corner */
+    repeating-linear-gradient(90deg, var(--stitch)) var(--r) var(--s1) / var(--side) var(--sh),
+    repeating-linear-gradient(90deg, var(--stitch)) var(--r) var(--s2) / var(--side) var(--sh),
+    repeating-linear-gradient(180deg, var(--stitch)) right var(--s1) top var(--r) / var(--sh) var(--side),
+    repeating-linear-gradient(180deg, var(--stitch)) right var(--s2) top var(--r) / var(--sh) var(--side),
+    repeating-linear-gradient(270deg, var(--stitch)) right var(--r) bottom var(--s1) / var(--side) var(--sh),
+    repeating-linear-gradient(270deg, var(--stitch)) right var(--r) bottom var(--s2) / var(--side) var(--sh),
+    repeating-linear-gradient(0deg, var(--stitch)) left var(--s1) bottom var(--r) / var(--sh) var(--side),
+    repeating-linear-gradient(0deg, var(--stitch)) left var(--s2) bottom var(--r) / var(--sh) var(--side),
+    var(--st-tl) left top / var(--r) var(--r),
+    var(--st-tr) right top / var(--r) var(--r),
+    var(--st-br) right bottom / var(--r) var(--r),
+    var(--st-bl) left bottom / var(--r) var(--r),
+    /* shading of the tape: straight runs, then the four corners */
     linear-gradient(to bottom, var(--roll)) center top / var(--side) var(--w),
     linear-gradient(to top, var(--roll)) center bottom / var(--side) var(--w),
     linear-gradient(to right, var(--roll)) left center / var(--w) var(--side),
@@ -597,17 +619,6 @@ html, body { background: var(--table); }
     radial-gradient(circle at 0 100%, transparent var(--inner), var(--roll-c)) right top / var(--r) var(--r),
     radial-gradient(circle at 100% 0, transparent var(--inner), var(--roll-c)) left bottom / var(--r) var(--r),
     radial-gradient(circle at 0 0, transparent var(--inner), var(--roll-c)) right bottom / var(--r) var(--r),
-    /* thread loops, running clockwise round the rim. Each straight run starts
-       on a whole loop where it leaves a corner, and each corner fan has a whole
-       number of loops, so the loops line up across every joint. */
-    repeating-linear-gradient(90deg, var(--thread)) var(--r) top / var(--side) var(--w),
-    repeating-linear-gradient(180deg, var(--thread)) right var(--r) / var(--w) var(--side),
-    repeating-linear-gradient(270deg, var(--thread)) right var(--r) bottom / var(--side) var(--w),
-    repeating-linear-gradient(0deg, var(--thread)) left bottom var(--r) / var(--w) var(--side),
-    repeating-conic-gradient(from 0deg at 100% 100%, var(--thread-c)) left top / var(--r) var(--r),
-    repeating-conic-gradient(from 0deg at 0 100%, var(--thread-c)) right top / var(--r) var(--r),
-    repeating-conic-gradient(from 0deg at 100% 0, var(--thread-c)) left bottom / var(--r) var(--r),
-    repeating-conic-gradient(from 0deg at 0 0, var(--thread-c)) right bottom / var(--r) var(--r),
     var(--bind-base, var(--bind));
   background-repeat: no-repeat;
   /* only the ring around the rim shows */
@@ -617,16 +628,21 @@ html, body { background: var(--table); }
   transition: bottom .25s ease;
 }
 /* The binding sits a little proud of the cloth, so a soft shadow falls just inside it. */
-.mat-body::before { box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, inset 0 0 0 7px rgba(0,0,0,.25), inset 0 1px 4px 8px rgba(0,0,0,.2), 0 1px 1px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.35); }
-/* On a custom picture the binding is dyed to match: the picture carries on
-   under the threads, a touch darker, as if the print wraps round the edge. */
+.mat-body::before { box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, inset 0 0 0 9px rgba(0,0,0,.25), inset 0 1px 4px 10px rgba(0,0,0,.2), 0 1px 1px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.35); }
+/* On a custom picture the tape is dyed to match: the picture carries on
+   under it, a touch darker, as if the print wraps round the edge. */
 .mat.has-art .mat-body::after {
   --bind-base: linear-gradient(rgba(0,0,0,.22), rgba(0,0,0,.32)), var(--mat-img) center / cover no-repeat, var(--bind);
-  --hi: rgba(255,255,255,.16); --lo: rgba(0,0,0,.3);
 }
 @media (max-width: 600px) {
-  .mat-body::after { --w: 5px; }
-  .mat-body::before { box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, inset 0 0 0 5px rgba(0,0,0,.25), inset 0 1px 3px 6px rgba(0,0,0,.2), 0 1px 1px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.35); }
+  .mat-body::after {
+    --w: 6px; --so: 1.4px; --sh: 1px;
+    --st-tl: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'%3E%3Cg transform=''%3E%3Cpath d='M1.40 20A18.60 18.60 0 0 1 20 1.40' pathLength='10' stroke='%23000' stroke-opacity='.4' stroke-width='1' stroke-dasharray='.12 .76 .12 0'/%3E%3Cpath d='M1.40 20A18.60 18.60 0 0 1 20 1.40' pathLength='10' stroke='%23fff' stroke-opacity='.1' stroke-width='1' stroke-dasharray='0 .12 .76 .12'/%3E%3Cpath d='M1.40 20A18.60 18.60 0 0 1 20 1.40' pathLength='10' stroke='%23fff' stroke-opacity='.12' stroke-width='1' stroke-dasharray='0 .3 .4 .3'/%3E%3Cpath d='M4.60 20A15.40 15.40 0 0 1 20 4.60' pathLength='9' stroke='%23000' stroke-opacity='.4' stroke-width='1' stroke-dasharray='.12 .76 .12 0'/%3E%3Cpath d='M4.60 20A15.40 15.40 0 0 1 20 4.60' pathLength='9' stroke='%23fff' stroke-opacity='.1' stroke-width='1' stroke-dasharray='0 .12 .76 .12'/%3E%3Cpath d='M4.60 20A15.40 15.40 0 0 1 20 4.60' pathLength='9' stroke='%23fff' stroke-opacity='.12' stroke-width='1' stroke-dasharray='0 .3 .4 .3'/%3E%3C/g%3E%3C/svg%3E");
+    --st-tr: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'%3E%3Cg transform='rotate(90 10.0 10.0)'%3E%3Cpath d='M1.40 20A18.60 18.60 0 0 1 20 1.40' pathLength='10' stroke='%23000' stroke-opacity='.4' stroke-width='1' stroke-dasharray='.12 .76 .12 0'/%3E%3Cpath d='M1.40 20A18.60 18.60 0 0 1 20 1.40' pathLength='10' stroke='%23fff' stroke-opacity='.1' stroke-width='1' stroke-dasharray='0 .12 .76 .12'/%3E%3Cpath d='M1.40 20A18.60 18.60 0 0 1 20 1.40' pathLength='10' stroke='%23fff' stroke-opacity='.12' stroke-width='1' stroke-dasharray='0 .3 .4 .3'/%3E%3Cpath d='M4.60 20A15.40 15.40 0 0 1 20 4.60' pathLength='9' stroke='%23000' stroke-opacity='.4' stroke-width='1' stroke-dasharray='.12 .76 .12 0'/%3E%3Cpath d='M4.60 20A15.40 15.40 0 0 1 20 4.60' pathLength='9' stroke='%23fff' stroke-opacity='.1' stroke-width='1' stroke-dasharray='0 .12 .76 .12'/%3E%3Cpath d='M4.60 20A15.40 15.40 0 0 1 20 4.60' pathLength='9' stroke='%23fff' stroke-opacity='.12' stroke-width='1' stroke-dasharray='0 .3 .4 .3'/%3E%3C/g%3E%3C/svg%3E");
+    --st-br: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'%3E%3Cg transform='rotate(180 10.0 10.0)'%3E%3Cpath d='M1.40 20A18.60 18.60 0 0 1 20 1.40' pathLength='10' stroke='%23000' stroke-opacity='.4' stroke-width='1' stroke-dasharray='.12 .76 .12 0'/%3E%3Cpath d='M1.40 20A18.60 18.60 0 0 1 20 1.40' pathLength='10' stroke='%23fff' stroke-opacity='.1' stroke-width='1' stroke-dasharray='0 .12 .76 .12'/%3E%3Cpath d='M1.40 20A18.60 18.60 0 0 1 20 1.40' pathLength='10' stroke='%23fff' stroke-opacity='.12' stroke-width='1' stroke-dasharray='0 .3 .4 .3'/%3E%3Cpath d='M4.60 20A15.40 15.40 0 0 1 20 4.60' pathLength='9' stroke='%23000' stroke-opacity='.4' stroke-width='1' stroke-dasharray='.12 .76 .12 0'/%3E%3Cpath d='M4.60 20A15.40 15.40 0 0 1 20 4.60' pathLength='9' stroke='%23fff' stroke-opacity='.1' stroke-width='1' stroke-dasharray='0 .12 .76 .12'/%3E%3Cpath d='M4.60 20A15.40 15.40 0 0 1 20 4.60' pathLength='9' stroke='%23fff' stroke-opacity='.12' stroke-width='1' stroke-dasharray='0 .3 .4 .3'/%3E%3C/g%3E%3C/svg%3E");
+    --st-bl: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'%3E%3Cg transform='rotate(270 10.0 10.0)'%3E%3Cpath d='M1.40 20A18.60 18.60 0 0 1 20 1.40' pathLength='10' stroke='%23000' stroke-opacity='.4' stroke-width='1' stroke-dasharray='.12 .76 .12 0'/%3E%3Cpath d='M1.40 20A18.60 18.60 0 0 1 20 1.40' pathLength='10' stroke='%23fff' stroke-opacity='.1' stroke-width='1' stroke-dasharray='0 .12 .76 .12'/%3E%3Cpath d='M1.40 20A18.60 18.60 0 0 1 20 1.40' pathLength='10' stroke='%23fff' stroke-opacity='.12' stroke-width='1' stroke-dasharray='0 .3 .4 .3'/%3E%3Cpath d='M4.60 20A15.40 15.40 0 0 1 20 4.60' pathLength='9' stroke='%23000' stroke-opacity='.4' stroke-width='1' stroke-dasharray='.12 .76 .12 0'/%3E%3Cpath d='M4.60 20A15.40 15.40 0 0 1 20 4.60' pathLength='9' stroke='%23fff' stroke-opacity='.1' stroke-width='1' stroke-dasharray='0 .12 .76 .12'/%3E%3Cpath d='M4.60 20A15.40 15.40 0 0 1 20 4.60' pathLength='9' stroke='%23fff' stroke-opacity='.12' stroke-width='1' stroke-dasharray='0 .3 .4 .3'/%3E%3C/g%3E%3C/svg%3E");
+  }
+  .mat-body::before { box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, inset 0 0 0 6px rgba(0,0,0,.25), inset 0 1px 3px 7px rgba(0,0,0,.2), 0 1px 1px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.35); }
 }
 
 /* Carried card: eases up and bigger when picked up, and between sizes as it
