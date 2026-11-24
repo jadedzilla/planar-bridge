@@ -628,8 +628,10 @@ html, body { background: var(--table); }
   mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
   transition: bottom .25s ease;
 }
-/* The binding sits a little proud of the cloth, so a soft shadow falls just inside it. */
-.mat-body::before { box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, inset 0 0 0 9px rgba(0,0,0,.25), inset 0 1px 4px 10px rgba(0,0,0,.2), 0 1px 1px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.35); }
+/* The cloth is pulled down into the seam at the inner stitches, then curves
+   back up to the flat playing surface: a dark groove right at the seam, a soft
+   lit shoulder as it rises, then nothing. (The first shadow sits under the tape.) */
+.mat-body::before { box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, inset 0 0 0 9px rgba(0,0,0,.25), inset 0 0 3px 9.5px rgba(0,0,0,.34), inset 0 0 4px 11px rgba(0,0,0,.1), inset 0 0 8px 13px rgba(255,255,255,.065), 0 1px 1px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.35); }
 /* On a custom picture the tape is dyed to match: the picture carries on
    under it, a touch darker, as if the print wraps round the edge. */
 .mat.has-art .mat-body::after {
@@ -643,7 +645,7 @@ html, body { background: var(--table); }
     --st-br: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'%3E%3Cg transform='rotate(180 10.0 10.0)'%3E%3Cpath d='M1.40 20A18.60 18.60 0 0 1 20 1.40' pathLength='10' stroke='%23000' stroke-opacity='.4' stroke-width='1' stroke-dasharray='.12 .76 .12 0'/%3E%3Cpath d='M1.40 20A18.60 18.60 0 0 1 20 1.40' pathLength='10' stroke='%23fff' stroke-opacity='.1' stroke-width='1' stroke-dasharray='0 .12 .76 .12'/%3E%3Cpath d='M1.40 20A18.60 18.60 0 0 1 20 1.40' pathLength='10' stroke='%23fff' stroke-opacity='.12' stroke-width='1' stroke-dasharray='0 .3 .4 .3'/%3E%3Cpath d='M4.60 20A15.40 15.40 0 0 1 20 4.60' pathLength='9' stroke='%23000' stroke-opacity='.4' stroke-width='1' stroke-dasharray='.12 .76 .12 0'/%3E%3Cpath d='M4.60 20A15.40 15.40 0 0 1 20 4.60' pathLength='9' stroke='%23fff' stroke-opacity='.1' stroke-width='1' stroke-dasharray='0 .12 .76 .12'/%3E%3Cpath d='M4.60 20A15.40 15.40 0 0 1 20 4.60' pathLength='9' stroke='%23fff' stroke-opacity='.12' stroke-width='1' stroke-dasharray='0 .3 .4 .3'/%3E%3C/g%3E%3C/svg%3E");
     --st-bl: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'%3E%3Cg transform='rotate(270 10.0 10.0)'%3E%3Cpath d='M1.40 20A18.60 18.60 0 0 1 20 1.40' pathLength='10' stroke='%23000' stroke-opacity='.4' stroke-width='1' stroke-dasharray='.12 .76 .12 0'/%3E%3Cpath d='M1.40 20A18.60 18.60 0 0 1 20 1.40' pathLength='10' stroke='%23fff' stroke-opacity='.1' stroke-width='1' stroke-dasharray='0 .12 .76 .12'/%3E%3Cpath d='M1.40 20A18.60 18.60 0 0 1 20 1.40' pathLength='10' stroke='%23fff' stroke-opacity='.12' stroke-width='1' stroke-dasharray='0 .3 .4 .3'/%3E%3Cpath d='M4.60 20A15.40 15.40 0 0 1 20 4.60' pathLength='9' stroke='%23000' stroke-opacity='.4' stroke-width='1' stroke-dasharray='.12 .76 .12 0'/%3E%3Cpath d='M4.60 20A15.40 15.40 0 0 1 20 4.60' pathLength='9' stroke='%23fff' stroke-opacity='.1' stroke-width='1' stroke-dasharray='0 .12 .76 .12'/%3E%3Cpath d='M4.60 20A15.40 15.40 0 0 1 20 4.60' pathLength='9' stroke='%23fff' stroke-opacity='.12' stroke-width='1' stroke-dasharray='0 .3 .4 .3'/%3E%3C/g%3E%3C/svg%3E");
   }
-  .mat-body::before { box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, inset 0 0 0 6px rgba(0,0,0,.25), inset 0 1px 3px 7px rgba(0,0,0,.2), 0 1px 1px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.35); }
+  .mat-body::before { box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, inset 0 0 0 6px rgba(0,0,0,.25), inset 0 0 2px 6.5px rgba(0,0,0,.34), inset 0 0 3px 7.5px rgba(0,0,0,.1), inset 0 0 6px 9px rgba(255,255,255,.065), 0 1px 1px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.35); }
 }
 
 /* Carried card: eases up and bigger when picked up, and between sizes as it
