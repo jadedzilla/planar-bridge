@@ -6,6 +6,12 @@
   <meta name="theme-color" content="#14171c">
   <meta name="application-name" content="Planar Bridge">
   <meta name="apple-mobile-web-app-title" content="Planar Bridge">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icon-192.png">
   <title>Planar Bridge</title>
   <link rel="stylesheet" href="/app.css">
 </head>
@@ -42,31 +48,32 @@
     </div>
   </section>
 
-  <!-- Table -->
+  <!-- Table: your playmat fills the screen; other players are bands on the edges -->
   <section id="game" class="game" hidden>
-    <header class="topbar">
-      <button class="code-chip" id="inviteBtn" title="Copy invite link">
-        <span class="muted">Session</span> <b id="codeLabel"></b> <span class="copy-hint" id="copyHint">Copy link</span>
-      </button>
-      <div class="topbar-actions">
-        <button class="btn small" data-act="deck">Load deck</button>
-        <button class="btn small" data-act="draw">Draw</button>
-        <button class="btn small hide-narrow" data-act="untap">Untap all</button>
-        <button class="btn small hide-narrow" data-act="shuffle">Shuffle</button>
-        <button class="btn small" data-act="log" title="Game log">Log</button>
-        <button class="btn small icon" data-act="more" title="More" aria-label="More">⋯</button>
-      </div>
-    </header>
-    <div id="banner" class="banner" hidden></div>
     <main id="table" class="table">
-      <div id="oppStrip" class="opp-strip"></div>
-      <div id="focusArea" class="focus-area" hidden></div>
       <div id="myArea" class="my-area"></div>
+      <div class="edge" data-rel="1"></div>
+      <div class="edge" data-rel="2"></div>
+      <div class="edge" data-rel="3"></div>
+      <div id="focusArea" class="focus-area" hidden></div>
     </main>
+    <div class="hud hud-tl">
+      <button class="code-chip" id="inviteBtn" title="Share invite link"><b id="codeLabel"></b></button>
+    </div>
+    <div class="hud hud-tr">
+      <button class="btn round" data-act="draw" title="Draw a card">Draw</button>
+      <button class="btn round icon" data-act="more" title="Menu" aria-label="Menu">☰</button>
+    </div>
+    <div class="hud hud-bl life me-life">
+      <button data-mylife="-1" aria-label="Lose 1 life">−</button>
+      <span class="val" id="myLife"></span>
+      <button data-mylife="1" aria-label="Gain 1 life">+</button>
+    </div>
     <footer id="handBar" class="handbar" data-drop="1" data-zone="hand">
-      <div class="hand-label">Your hand <span id="handCount"></span></div>
+      <button class="hand-tab" id="handTab">Hand <span id="handCount"></span> <span class="caret">▾</span></button>
       <div id="hand" class="hand"></div>
     </footer>
+    <div id="banner" class="banner" hidden></div>
     <aside id="logPanel" class="logpanel" hidden>
       <div class="logpanel-head"><b>Game log</b><button class="btn small" data-act="log">Close</button></div>
       <ol id="logList"></ol>

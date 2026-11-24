@@ -135,30 +135,29 @@ function banner(text) {
 }
 
 // ---------- Rendering ----------
-// Layout (one tablet per player): opponents as compact tiles along the top,
-// an optional "focused" opponent playmat in the middle, and your own playmat
-// filling the rest of the screen above your hand.
+// Layout (one tablet per player, sitting around a real table):
+// your playmat fills the screen, and each other player is a band on the edge
+// of the screen that faces where they sit: left, across (top) or right.
+const REL_NAME = { 1: 'left', 2: 'across', 3: 'right' };
+function relOf(p, from = me()) { return (p.pos - from.pos + 4) % 4; }
+function playerAtRel(rel) { const m = me(); return app.s.players.find((p) => p !== m && relOf(p, m) === rel); }
+
 function render() {
   const s = app.s;
   const mine = me();
   if (!s || !mine) return;
   const used = new Set();
-  const opps = s.players.filter((p) => p !== mine).sort((a, b) => a.seat - b.seat);
-  if (app.focus && !opps.some((p) => p.id === app.focus)) app.focus = null;
+  if (app.focus && !playerById(app.focus)) app.focus = null;
 
-  // Opponent tiles, plus an invite tile while seats are free
-  const strip = $('#oppStrip');
-  const tiles = opps.map((p) => updateTile(tileFor(p), p));
-  if (s.players.length < 4) tiles.push(inviteTile());
-  syncChildren(strip, tiles);
-  strip.dataset.count = tiles.length;
+  // Edge bands
+  for (const rel of [1, 2, 3]) updateEdge($(`.edge[data-rel="${rel}"]`), playerAtRel(rel), rel);
 
-  // Focused opponent playmat
+  // Another player's playmat, opened from their band
   const focusP = app.focus && playerById(app.focus);
   const focus = $('#focusArea');
   focus.hidden = !focusP;
-  $('#table').classList.toggle('has-focus', !!focusP);
   if (focusP) {
+    focus.dataset.rel = relOf(focusP);
     const mat = matFor(focusP);
     syncChildren(focus, [mat]);
     updateMat(mat, focusP, used);
@@ -168,6 +167,9 @@ function render() {
   const myMat = matFor(mine);
   syncChildren($('#myArea'), [myMat]);
   updateMat(myMat, mine, used);
+  $('#myLife').textContent = mine.life;
+  $('#myLife').classList.toggle('low', mine.life <= 5);
+  $('#game').style.setProperty('--my-seat', mine.color);
 
   for (const [id, mat] of app.matEls) {
     if (!playerById(id)) { mat.remove(); app.matEls.delete(id); }
@@ -175,7 +177,7 @@ function render() {
 
   // My hand
   const hand = $('#hand');
-  $('#handCount').textContent = `(${mine.zones.hand.length})`;
+  $('#handCount').textContent = mine.zones.hand.length;
   $('#handBar').dataset.player = mine.id;
   syncChildren(hand, mine.zones.hand.map((c) => cardEl(c, 'hand', mine, used)));
   layoutHand();
@@ -185,6 +187,7 @@ function render() {
 
   renderLog();
   if (sheetKind === 'pile') renderPileSheet();
+  if (sheetKind === 'seating') renderSeatingSheet();
 }
 
 function matFor(p) {
@@ -198,73 +201,59 @@ function setFocus(id) {
   render();
 }
 
-// ---------- Opponent tiles ----------
-const tileEls = new Map();
-function tileFor(p) {
-  let t = tileEls.get(p.id);
-  if (t) return t;
-  t = document.createElement('section');
-  t.className = 'opp-tile';
-  t.dataset.player = p.id;
-  t.innerHTML = `
-    <div class="opp-head">
-      <span class="dot"></span><span class="nm"></span><span class="offline"></span>
-      <div class="life small">
-        <button data-life="-1" aria-label="Lose 1 life">−</button>
-        <span class="val"></span>
-        <button data-life="1" aria-label="Gain 1 life">+</button>
-      </div>
-    </div>
-    <div class="mini-bf" data-drop="1" data-zone="battlefield" data-player="${p.id}"></div>
-    <div class="opp-zones">
-      <span class="zchip" data-drop="1" data-zone="hand" data-player="${p.id}"><span class="lg">Hand</span><span class="sh">Hand</span> <b data-n="hand"></b></span>
-      <span class="zchip" data-drop="1" data-zone="library" data-player="${p.id}"><span class="lg">Library</span><span class="sh">Lib</span> <b data-n="library"></b></span>
-      <span class="zchip" data-drop="1" data-zone="graveyard" data-player="${p.id}" data-open="graveyard"><span class="lg">Graveyard</span><span class="sh">GY</span> <b data-n="graveyard"></b></span>
-      <span class="zchip" data-drop="1" data-zone="exile" data-player="${p.id}" data-open="exile"><span class="lg">Exile</span><span class="sh">Exile</span> <b data-n="exile"></b></span>
-    </div>`;
-  t.querySelectorAll('[data-life]').forEach((b) => {
-    b.onclick = (e) => { e.stopPropagation(); send({ type: 'life', playerId: p.id, delta: Number(b.dataset.life) }); };
-  });
-  t.addEventListener('click', (e) => {
-    if (drag || e.target.closest('button')) return;
-    const chip = e.target.closest('[data-open]');
-    if (chip) return openPileSheet(p.id, chip.dataset.open);
-    setFocus(p.id);
-  });
-  tileEls.set(p.id, t);
-  return t;
-}
-
-function updateTile(t, p) {
-  t.style.setProperty('--seat', p.color);
-  t.classList.toggle('focused', app.focus === p.id);
-  $('.nm', t).textContent = p.name;
-  $('.offline', t).textContent = p.connected ? '' : 'offline';
-  const lv = $('.val', t);
-  lv.textContent = p.life;
-  lv.classList.toggle('low', p.life <= 5);
-  for (const z of ['hand', 'library', 'graveyard', 'exile']) $(`[data-n="${z}"]`, t).textContent = p.counts[z];
-  // Miniature battlefield: small, non-interactive copies of the cards
-  const mini = $('.mini-bf', t);
-  mini.dataset.empty = p.zones.battlefield.length ? '' : 'Drop cards here';
-  mini.innerHTML = p.zones.battlefield.map((c) => {
-    const hidden = !c.name || c.faceDown;
-    const src = c.transformed && c.back ? c.back : c.img;
-    return `<div class="mini-card${hidden ? ' back' : ''}${c.tapped ? ' tapped' : ''}" style="left:${(c.x * 100).toFixed(1)}%;top:${(c.y * 100).toFixed(1)}%">${!hidden && src ? `<img src="${esc(src)}" alt="">` : ''}</div>`;
-  }).join('');
-  return t;
-}
-
-let inviteEl = null;
-function inviteTile() {
-  if (!inviteEl) {
-    inviteEl = document.createElement('section');
-    inviteEl.className = 'opp-tile invite';
-    inviteEl.innerHTML = `<div class="invite-inner"><span class="muted">Waiting for players</span><b class="invite-code"></b><span class="muted small-note">Enter this code on another tablet, or tap to share the link</span></div>`;
-    inviteEl.onclick = () => $('#inviteBtn').click();
+function updateEdge(el, p, rel) {
+  el.classList.toggle('empty', !p);
+  if (!p) {
+    delete el.dataset.drop; delete el.dataset.player; delete el.dataset.zone;
+    el.style.removeProperty('--seat');
+    const open = app.s.players.length < 4;
+    el.innerHTML = `<span class="edge-inner"><span class="muted">${rel === 2 && open ? `Invite: <b class="edge-code">${esc(app.code)}</b>` : 'Empty seat'}</span></span>`;
+    return;
   }
-  $('.invite-code', inviteEl).textContent = app.code;
-  return inviteEl;
+  el.dataset.drop = '1';
+  el.dataset.zone = 'battlefield';
+  el.dataset.player = p.id;
+  el.style.setProperty('--seat', p.color);
+  el.classList.toggle('focused', app.focus === p.id);
+  el.innerHTML = `<span class="edge-inner"><span class="dot"></span><b>${esc(p.name)}</b>${p.connected ? '' : ' <span class="offline">offline</span>'}
+    <span class="edge-life${p.life <= 5 ? ' low' : ''}">${p.life}</span>
+    <span class="muted">Hand ${p.counts.hand} · Board ${p.counts.battlefield}</span></span>`;
+}
+
+// Tapping a band opens that player's playmat; tapping an empty band opens seating.
+document.querySelectorAll('.edge').forEach((el) => {
+  el.addEventListener('click', () => {
+    if (drag) return;
+    if (el.dataset.player) setFocus(el.dataset.player);
+    else if (el.querySelector('.edge-code')) $('#inviteBtn').click();
+    else openSeatingSheet();
+  });
+});
+
+// Where a card sent by another player should land on the receiver's playmat:
+// near the receiver's edge that faces the sender.
+function landingSpot(sender, receiver) {
+  const rel = relOf(sender, receiver);
+  const r = Math.random();
+  if (rel === 1) return { x: 0.03 + r * 0.08, y: 0.2 + Math.random() * 0.45 };
+  if (rel === 3) return { x: 0.8 + r * 0.08, y: 0.2 + Math.random() * 0.45 };
+  return { x: 0.25 + r * 0.45, y: 0.03 + Math.random() * 0.06 };
+}
+
+// Animate a card that just arrived from another player, sliding in from their side.
+const arrived = new Set();
+function maybeAnimateArrival(el, c, holder) {
+  if (!c.from || holder.id !== app.s.you || c.from === app.s.you) return;
+  const key = c.id + ':' + c.sentAt;
+  if (arrived.has(key)) return;
+  arrived.add(key);
+  if (Date.now() - c.sentAt > 3000 || !el.animate) return;
+  const sender = playerById(c.from);
+  if (!sender) return;
+  const rel = relOf(sender);
+  const off = { 1: 'translate(-60vw, 0) rotate(-25deg)', 2: 'translate(0, -70vh) rotate(180deg)', 3: 'translate(60vw, 0) rotate(25deg)' }[rel];
+  if (!off) return;
+  requestAnimationFrame(() => el.animate([{ transform: off, opacity: 0.6 }, { transform: 'none', opacity: 1 }], { duration: 520, easing: 'cubic-bezier(.15,.85,.25,1)' }));
 }
 
 function syncChildren(parent, els) {
@@ -388,6 +377,7 @@ function cardEl(c, zone, holder, used) {
   if (!el) { el = makeCardEl(); app.cardEls.set(c.id, el); }
   used.add(c.id);
   paintCard(el, c, zone, holder);
+  if (zone === 'battlefield') maybeAnimateArrival(el, c, holder);
   return el;
 }
 
@@ -435,6 +425,7 @@ document.addEventListener('pointerdown', (e) => {
     w: src.offsetWidth, h: src.offsetHeight,
     started: false,
     long: false,
+    samples: [{ x: e.clientX, y: e.clientY, t: performance.now() }],
   };
   drag.timer = setTimeout(() => {
     if (drag && !drag.started) { drag.long = true; const d = drag; drag = null; onLongPress(d); }
@@ -447,6 +438,9 @@ document.addEventListener('pointermove', (e) => {
     return;
   }
   drag.x = e.clientX; drag.y = e.clientY;
+  const now = performance.now();
+  drag.samples.push({ x: e.clientX, y: e.clientY, t: now });
+  while (drag.samples.length > 2 && now - drag.samples[0].t > 100) drag.samples.shift();
   if (!drag.started) {
     if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 7) return;
     startDrag();
@@ -462,8 +456,10 @@ document.addEventListener('pointerup', (e) => {
   const d = drag;
   drag = null;
   clearTimeout(d.timer);
-  if (d.started) finishDrag(d, e.clientX, e.clientY);
-  else onClick(d);
+  if (d.started) {
+    d.samples.push({ x: e.clientX, y: e.clientY, t: performance.now() });
+    if (!tryFlick(d)) finishDrag(d, e.clientX, e.clientY);
+  } else onClick(d);
 });
 document.addEventListener('pointercancel', () => {
   if (!drag) return;
@@ -494,17 +490,6 @@ function startDrag() {
   drag.src.classList.add('dragging-src');
   // Dragging from inside a pile viewer: close the sheet so the table is reachable.
   if (drag.src.closest('#sheet')) closeSheet();
-  autoScroll();
-}
-
-function autoScroll() {
-  if (!drag || !drag.started) return;
-  const table = $('#table');
-  const r = table.getBoundingClientRect();
-  const edge = 56;
-  if (drag.y < r.top + edge) table.scrollTop -= 14;
-  else if (drag.y > r.bottom - edge && drag.y < r.bottom + 4) table.scrollTop += 14;
-  requestAnimationFrame(autoScroll);
 }
 
 function dropTargetAt(x, y) {
@@ -524,6 +509,58 @@ function cleanupDrag(d) {
   highlight(null);
 }
 
+// ---------- Flick to send ----------
+// A fast swipe that ends with the card still moving sends it to the player
+// sitting in that direction (left, across or right).
+const FLICK_SPEED = 0.9; // px per ms, measured over the last ~100ms before release
+function tryFlick(d) {
+  const a = d.samples[0];
+  const b = d.samples[d.samples.length - 1];
+  const dt = Math.max(1, b.t - a.t);
+  const vx = (b.x - a.x) / dt;
+  const vy = (b.y - a.y) / dt;
+  const speed = Math.hypot(vx, vy);
+  if (speed < FLICK_SPEED || b.t - a.t > 160) return false;
+  // Don't treat a quick drop onto a specific zone (pile, hand, band) as a flick
+  // A quick drop onto a pile or another player's band is a normal drop, not a flick.
+  const target = dropTargetAt(b.x, b.y);
+  if (target && !(target.dataset.player === app.s.you && ['battlefield', 'hand'].includes(target.dataset.zone))) return false;
+  const dirs = { 1: [-1, 0], 2: [0, -1], 3: [1, 0] };
+  let best = null;
+  let bestDot = 0.55; // within roughly 55 degrees
+  for (const rel of [1, 2, 3]) {
+    const p = playerAtRel(rel);
+    if (!p) continue;
+    const dot = (vx * dirs[rel][0] + vy * dirs[rel][1]) / speed;
+    if (dot > bestDot) { bestDot = dot; best = p; }
+  }
+  if (!best) return false;
+  sendFlick(d, best, vx, vy);
+  return true;
+}
+
+function sendFlick(d, to, vx, vy) {
+  highlight(null);
+  const g = d.ghost;
+  const sp = Math.hypot(vx, vy);
+  const dist = Math.max(innerWidth, innerHeight) * 1.2;
+  const tx = (vx / sp) * dist;
+  const ty = (vy / sp) * dist;
+  d.src.style.visibility = 'hidden';
+  const finish = () => {
+    g.remove();
+    d.src.classList.remove('dragging-src');
+    d.src.style.visibility = '';
+  };
+  if (g.animate) {
+    g.animate([{ transform: 'rotate(3deg) scale(1.05)' }, { transform: `translate(${tx}px, ${ty}px) rotate(${vx > 0 ? 40 : -40}deg) scale(0.9)` }],
+      { duration: 380, easing: 'cubic-bezier(.3,.6,.4,1)', fill: 'forwards' }).onfinish = finish;
+  } else finish();
+  const spot = landingSpot(me(), to);
+  send({ type: 'move', cardId: d.id, toPlayer: to.id, toZone: 'battlefield', x: spot.x, y: spot.y });
+  toast(`Sent to ${to.name}`);
+}
+
 function finishDrag(d, x, y) {
   const target = dropTargetAt(x, y);
   cleanupDrag(d);
@@ -531,7 +568,10 @@ function finishDrag(d, x, y) {
   const toZone = target.dataset.zone;
   const toPlayer = target.dataset.player;
   const msg = { type: 'move', cardId: d.id, toPlayer, toZone };
-  if (toZone === 'battlefield') {
+  if (toZone === 'battlefield' && target.classList.contains('edge')) {
+    // Dropped on another player's band: land it on their side facing you
+    Object.assign(msg, landingSpot(me(), playerById(toPlayer)));
+  } else if (toZone === 'battlefield') {
     const r = target.getBoundingClientRect();
     const mini = target.classList.contains('mini-bf');
     msg.x = Math.max(0, Math.min(0.94, (x - (mini ? 0 : d.offX) - r.left) / r.width));
@@ -926,6 +966,10 @@ function openMoreMenu() {
     <h3>Session ${esc(app.code)}</h3>
     <p class="note">Invite link: <code>${esc(location.origin)}/s/${esc(app.code)}</code> · ${app.s.players.length} of 4 seats taken</p>
     <div class="sheet-actions" style="margin-top:12px">
+      <button class="btn primary" data-m="deck">Load deck</button>
+      <button class="btn" data-m="fullscreen">${document.fullscreenElement || document.webkitFullscreenElement ? 'Exit full screen' : 'Full screen'}</button>
+      <button class="btn" data-m="seating">Seating</button>
+      <button class="btn" data-m="log">Game log</button>
       <button class="btn" data-m="untap">Untap all</button>
       <button class="btn" data-m="shuffle">Shuffle library</button>
       <button class="btn" data-m="new">Reset my cards (new game)</button>
@@ -935,8 +979,10 @@ function openMoreMenu() {
     <div id="moreExtra"></div>
     <h3 style="margin-top:14px">How to play here</h3>
     <ul class="note">
-      <li>Drag any card to any zone on any playmat. Drop onto an opponent's tile to give them the card. You can also tap or long-press a card for a menu with every move.</li>
-      <li>Tap an opponent's tile to open their full playmat above yours. Tap it again (or Close) to put it away.</li>
+      <li>Flick a card toward another player to send it across to their tablet. Each edge of your screen faces the player sitting on that side (set this up under Seating).</li>
+      <li>You can also drag a card onto a player's edge band, or tap or long-press a card for a menu with every move.</li>
+      <li>Tap a player's edge band to see their playmat. Tap Close to put it away.</li>
+      <li>Tap the Hand tab to tuck your hand away and use the whole screen.</li>
       <li>Click or tap a card on the battlefield to tap / untap it. Right-click or long-press for more.</li>
       <li>Tap your library to draw. Drag it to move the top card somewhere.</li>
       <li>Anyone can change anyone's life total with − and +.</li>
@@ -946,6 +992,10 @@ function openMoreMenu() {
     b.onclick = () => {
       const a = b.dataset.m;
       const extra = $('#moreExtra');
+      if (a === 'deck') return openDeckSheet();
+      if (a === 'seating') return openSeatingSheet();
+      if (a === 'log') { closeSheet(); $('#logPanel').hidden = false; return renderLog(); }
+      if (a === 'fullscreen') { toggleFullscreen(); return closeSheet(); }
       if (a === 'untap') { send({ type: 'untapAll' }); closeSheet(); }
       if (a === 'shuffle') { send({ type: 'shuffle' }); closeSheet(); }
       if (a === 'new') {
@@ -971,11 +1021,14 @@ boot();
 // after a drag. For touch input we fire the click ourselves on pointerup and
 // swallow the browser's own click if it arrives too.
 (() => {
-  const TAPPABLE = 'button, .opp-tile, .pile:not(.mine), .zchip, .chip';
+  const TAPPABLE = 'button, .edge, .pile:not(.mine), .chip';
   let down = null;
   let synth = false;
   let swallowUntil = 0;
+  let synthAt = 0;
+  let lastDown = { target: null, t: 0 };
   document.addEventListener('pointerdown', (e) => {
+    lastDown = { target: e.target, t: performance.now() };
     if (e.pointerType === 'mouse') return;
     const el = e.target.closest(TAPPABLE);
     if (!el || e.target.closest('.card[data-card-id]')) return (down = null);
@@ -987,11 +1040,63 @@ boot();
     if (!d || e.pointerId !== d.id || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 12) return;
     if (!d.el.isConnected || d.el.disabled) return;
     swallowUntil = Date.now() + 700;
+    synthAt = performance.now();
     synth = true;
     try { d.target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window })); } finally { synth = false; }
   }, true);
   document.addEventListener('pointercancel', () => { down = null; }, true);
   document.addEventListener('click', (e) => {
-    if (!synth && Date.now() < swallowUntil) { e.stopImmediatePropagation(); e.preventDefault(); }
+    if (synth || Date.now() >= swallowUntil || e.pointerType === 'mouse') return;
+    // A new press since our synthetic click means this is a genuine new click.
+    const t = lastDown.target;
+    if (lastDown.t > synthAt && t && (t === e.target || t.contains(e.target) || e.target.contains(t))) return;
+    e.stopImmediatePropagation();
+    e.preventDefault();
   }, true);
 })();
+
+
+// ---------- Full screen, hand drawer, my life ----------
+function toggleFullscreen() {
+  const d = document;
+  const el = d.documentElement;
+  try {
+    if (d.fullscreenElement || d.webkitFullscreenElement) (d.exitFullscreen || d.webkitExitFullscreen).call(d);
+    else if (el.requestFullscreen) el.requestFullscreen({ navigationUI: 'hide' }).catch(() => fullscreenHelp());
+    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    else fullscreenHelp();
+  } catch { fullscreenHelp(); }
+}
+function fullscreenHelp() {
+  toast('For full screen on iPad: Share → Add to Home Screen, then open Planar Bridge from the home screen.');
+}
+
+$('#handTab').addEventListener('click', () => {
+  $('#game').classList.toggle('hand-hidden');
+  setTimeout(layoutHand, 260);
+});
+document.querySelectorAll('[data-mylife]').forEach((b) => {
+  b.addEventListener('click', () => send({ type: 'life', playerId: app.s.you, delta: Number(b.dataset.mylife) }));
+});
+
+// ---------- Seating ----------
+function openSeatingSheet() {
+  openSheet('seating', '');
+  renderSeatingSheet();
+}
+function renderSeatingSheet() {
+  const m = me();
+  const others = app.s.players.filter((p) => p !== m);
+  $('#sheet').innerHTML = `
+    <button class="btn small sheet-close" data-close>Done</button>
+    <h3>Seating</h3>
+    <p class="note">Tell Planar Bridge where everyone sits around the table, as seen from your seat. Flicking a card toward an edge sends it to the player on that side. Changes apply to every tablet.</p>
+    ${others.length ? others.map((p) => `
+      <div class="move-row" style="--seat:${p.color}">
+        <div class="who"><span class="dot"></span>${esc(p.name)}</div>
+        <div class="chips">${[1, 2, 3].map((rel) => `<button class="chip${relOf(p, m) === rel ? ' on' : ''}" data-seat="${p.id}" data-rel="${rel}">${{ 1: 'On my left', 2: 'Across from me', 3: 'On my right' }[rel]}</button>`).join('')}</div>
+      </div>`).join('') : '<p class="muted">Nobody else has joined yet.</p>'}`;
+  $('#sheet').querySelectorAll('[data-seat]').forEach((b) => {
+    b.onclick = () => send({ type: 'seat', playerId: b.dataset.seat, pos: (m.pos + Number(b.dataset.rel)) % 4 });
+  });
+}

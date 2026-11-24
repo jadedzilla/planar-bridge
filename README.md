@@ -16,17 +16,18 @@ Everyone must be able to reach the same server, so for play over the internet it
 
 ## What it does
 
+- Built for in-person play with one tablet per player. Your playmat fills the whole screen.
+- Each edge of the screen faces another player at the table (left, across, right). Flick a card toward an edge to send it to that player's tablet, where it slides in from your side.
+- You can also drag a card onto a player's edge band, or tap or long-press a card for a menu with every move. Tap a band to look at that player's playmat.
+- Set who sits where under Menu → Seating. It applies to every tablet.
 - Sessions of up to 4 players, joined by link (`/s/CODE`) or code. Reloading the page puts you back in your seat.
-- Built for one tablet per player: your own playmat fills the screen, with your hand along the bottom.
-- Opponents show as tiles across the top with their life, card counts and a mini view of their battlefield. Drop a card on a tile to give it to that player, or tap the tile to open their full playmat above yours.
-- Each playmat has a battlefield, library, graveyard and exile, plus a private hand.
-- Drag any card to any zone on any player's playmat (mouse or touch). Tap or long-press a card for a menu with every move.
-- Click/tap a battlefield card to tap/untap it. Transform double-faced cards, turn cards face down, add counters.
+- Battlefield, library, graveyard, exile, and a private hand drawer you can tuck away.
+- Tap a battlefield card to tap/untap it. Transform double-faced cards, turn cards face down, add counters.
 - Library: tap to draw, drag to move the top card, search (only you see it), shuffle, mill.
 - Life totals with starting life 20, 30 or 40. The app does not track turns or enforce rules.
 - Deck import: paste a text deck list (Moxfield, Archidekt, Arena, MTGO exports). Card data and images come from the Scryfall API.
 - Hidden information: hands and libraries are never sent to other players.
-- Game log of moves, draws and life changes.
+- Full screen from the menu. On iPad, use Share → Add to Home Screen for a full-screen app.
 
 ## Structure
 
