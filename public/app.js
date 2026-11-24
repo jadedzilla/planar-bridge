@@ -358,6 +358,7 @@ function updateMat(mat, p, used) {
   const lib = $('.pile.library', mat);
   lib.classList.toggle('mine', isMe);
   const back = $('.library-back', lib);
+  setBackArt(back, p);
   back.style.visibility = p.counts.library ? 'visible' : 'hidden';
   setStack(back, p.counts.library);
   $('.count', lib).textContent = p.counts.library;
@@ -489,6 +490,7 @@ function paintCard(el, c, zone, holder) {
   el.dataset.zone = zone;
   const hidden = !c.name || (zone === 'battlefield' && c.faceDown);
   el.classList.toggle('back', hidden);
+  setBackArt(el, playerById(c.owner));
   el.classList.toggle('facedown-peek', zone === 'battlefield' && !!c.faceDown && !!c.name);
   el.classList.toggle('tapped', zone === 'battlefield' && !!c.tapped);
   const img = el.querySelector('img');
@@ -650,6 +652,7 @@ function startDrag() {
   hidePreview();
   const ghost = drag.fromLibrary ? document.createElement('div') : drag.src.cloneNode(true);
   ghost.className = drag.fromLibrary ? 'card back ghost' : drag.src.className + ' ghost';
+  if (drag.fromLibrary) setBackArt(ghost, me());
   ghost.classList.remove('tapped');
   ghost.style.width = drag.w + 'px';
   ghost.style.height = drag.h + 'px';
@@ -949,7 +952,7 @@ function openCardMenu(cardId) {
   openSheet('card', `
     <button class="btn small sheet-close" data-close>Close</button>
     <div class="sheet-top">
-      <div class="sheet-card ${visible ? '' : 'back'}">${visible && src ? `<img src="${esc(src)}" alt="${esc(c.name)}">` : ''}</div>
+      <div class="sheet-card ${visible ? '' : 'back'}" style="${!visible && owner && owner.cardBack ? `--card-back:url('${backUrl(owner)}')` : ''}">${visible && src ? `<img src="${esc(src)}" alt="${esc(c.name)}">` : ''}</div>
       <div style="flex:1;min-width:0">
         <h3>${visible ? esc(c.name) : 'Hidden card'}</h3>
         <div class="note">${ZONE_LABEL[zone]} of ${esc(holder.id === app.s.you ? 'you' : holder.name)}${owner && owner.id !== holder.id ? ` · owned by ${esc(owner.name)}` : ''}${bf && c.faceDown ? ' · face down' : ''}</div>
@@ -1114,9 +1117,10 @@ function guessDeckName(text, cards) {
 }
 
 // Returns the saved deck, or throws if the device has no room left.
-function saveDeck({ id, name, text, cards, colors }) {
+function saveDeck({ id, name, text, cards, colors, cardBack }) {
   const decks = loadDecks();
   const deck = { id: id || 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: name.slice(0, 60), text, cards: packCards(cards), colors: colors || null, updated: Date.now() };
+  if (cardBack) deck.cardBack = cardBack;
   const i = decks.findIndex((d) => d.id === deck.id);
   if (i >= 0) decks[i] = deck; else decks.push(deck);
   storeDecks(decks);
@@ -1259,7 +1263,7 @@ function bringPendingDeck() {
   app.pendingDeck = null;
   const owned = Object.values(m.counts || {}).reduce((a, b) => a + b, 0);
   if (owned > 0) return;
-  send({ type: 'loadDeck', cards: unpackCards(deck.cards) });
+  send({ type: 'loadDeck', cards: unpackCards(deck.cards), cardBack: deck.cardBack || null });
   toast(`${deck.name} is shuffled into your library. Tap your library to draw.`);
 }
 
@@ -1267,7 +1271,7 @@ function loadSavedDeck(id) {
   const deck = deckById(id);
   if (!deck) return;
   setPickedDeck(deck.id);
-  send({ type: 'loadDeck', cards: unpackCards(deck.cards) });
+  send({ type: 'loadDeck', cards: unpackCards(deck.cards), cardBack: deck.cardBack || null });
   closeSheet();
   toast(`Loaded ${deck.name} (${deckSize(deck)} cards) and shuffled. Tap your library to draw.`);
 }
@@ -1295,6 +1299,17 @@ function openDeckSheet(opts = {}) {
     </label>
     <p class="note">Paste a deck list, one card per line, like <code>4 Lightning Bolt</code>. Export from Moxfield, Archidekt, MTG Arena, MTGO and most other deckbuilders works ("Export → Text"). Lines under a <code>Sideboard</code> heading are skipped. Cards under a <code>Commander</code> heading start in your command zone.</p>
     <textarea id="deckText" spellcheck="false" placeholder="4 Lightning Bolt&#10;20 Mountain">${esc(saved)}</textarea>
+    <div class="back-field">
+      <div class="back-preview card-back-art"></div>
+      <div class="back-side">
+        <span class="back-title">Card back</span>
+        <div class="row">
+          <label class="btn small">Choose a picture<input type="file" accept="image/*" id="backFile" hidden></label>
+          <button type="button" class="btn small" id="backClear">Use the official back</button>
+        </div>
+        <p class="note" id="backMsg"></p>
+      </div>
+    </div>
     <div class="row">
       <button class="btn primary" id="deckLoad">${mode === 'landing' ? 'Save deck' : 'Load deck'}</button>
       <button class="btn" id="deckSample">Use sample deck</button>
@@ -1305,8 +1320,24 @@ function openDeckSheet(opts = {}) {
       ? 'Saved decks stay on this device, in this browser. Cards are matched on Scryfall once, when you save.'
       : 'Loading a deck replaces all of your current cards, wherever they are on the table, and shuffles them into your library.'} Deckbuilder links aren't supported yet; paste the exported list.</div>`,
   { mode, editId: editing ? editing.id : null });
+  app.backDraft = editing ? editing.cardBack || '' : '';
+  showBackDraft();
+  $('#backFile').onchange = async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    $('#backMsg').textContent = 'Preparing your picture…';
+    try { app.backDraft = await shrinkCardBack(file); showBackDraft(); }
+    catch { $('#backMsg').textContent = "That picture couldn't be used. Try a JPEG or PNG."; }
+  };
+  $('#backClear').onclick = () => { app.backDraft = ''; showBackDraft(); };
   $('#deckSample').onclick = () => { $('#deckText').value = SAMPLE_DECK; };
-  $('#deckLoad').onclick = () => importDeck($('#deckText').value);
+  $('#deckLoad').onclick = () => {
+    const text = $('#deckText').value;
+    // Only the name or card back changed: no need to look the cards up again.
+    if (editing && text === editing.text) return finishImport(text, unpackCards(editing.cards), [], editing.colors);
+    importDeck(text);
+  };
   $('#sheet').querySelectorAll('[data-deck-load]').forEach((b) => { b.onclick = () => loadSavedDeck(b.dataset.deckLoad); });
 }
 
@@ -1320,7 +1351,7 @@ function finishImport(text, cards, notFound, colors) {
   let deck = null;
   let saveErr = '';
   if (wantSave) {
-    try { deck = saveDeck({ id: opts.editId, name, text, cards, colors }); } catch { saveErr = ' This device has no room left to save it.'; }
+    try { deck = saveDeck({ id: opts.editId, name, text, cards, colors, cardBack: app.backDraft }); } catch { saveErr = ' This device has no room left to save it.'; }
   }
   const missed = notFound.length ? ` Not found: ${notFound.join(', ')}` : '';
   if (opts.mode === 'landing') {
@@ -1332,7 +1363,7 @@ function finishImport(text, cards, notFound, colors) {
     return;
   }
   if (deck) setPickedDeck(deck.id);
-  send({ type: 'loadDeck', cards });
+  send({ type: 'loadDeck', cards, cardBack: app.backDraft || null });
   if (missed || saveErr) {
     status.textContent = `Loaded ${cards.length} cards.${saveErr}${missed}`;
   } else {
@@ -1670,6 +1701,44 @@ async function shrinkImage(file) {
     throw new Error('too big');
   } finally { URL.revokeObjectURL(url); }
 }
+// ---------- Custom card backs ----------
+// Each saved deck can have its own card back. The picture is cropped to card
+// shape and shrunk to a small JPEG on this device, saved with the deck, and
+// sent to the table when the deck is loaded so everyone sees it.
+async function shrinkCardBack(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((ok, fail) => { const i = new Image(); i.onload = () => ok(i); i.onerror = fail; i.src = url; });
+    const W = 488, H = 680; // Scryfall's card size, 63:88
+    const k = Math.max(W / img.naturalWidth, H / img.naturalHeight);
+    const sw = W / k, sh = H / k;
+    const c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    c.getContext('2d').drawImage(img, (img.naturalWidth - sw) / 2, (img.naturalHeight - sh) / 2, sw, sh, 0, 0, W, H);
+    for (const q of [0.85, 0.75, 0.65, 0.5, 0.4]) {
+      const data = c.toDataURL('image/jpeg', q);
+      if (data.length < 150 * 1024) return data; // about 110 KB once decoded
+    }
+    throw new Error('too big');
+  } finally { URL.revokeObjectURL(url); }
+}
+function showBackDraft() {
+  const prev = $('.back-preview');
+  if (!prev) return;
+  if (app.backDraft) prev.style.setProperty('--card-back', `url("${app.backDraft}")`);
+  else prev.style.removeProperty('--card-back');
+  $('#backClear').hidden = !app.backDraft;
+  $('#backMsg').textContent = app.backDraft
+    ? "This deck's cards show this back to everyone at the table. It's cropped to card shape."
+    : 'Using the official Magic card back. Choose a picture to give this deck its own.';
+}
+// Points an element's --card-back at the custom back of the deck this player loaded.
+function backUrl(p) { return `/back/${encodeURIComponent(app.code)}/${encodeURIComponent(p.id)}?v=${p.cardBack}`; }
+function setBackArt(el, p) {
+  if (p && p.cardBack) el.style.setProperty('--card-back', `url("${backUrl(p)}")`);
+  else el.style.removeProperty('--card-back');
+}
+
 function openPlaymatSheet() {
   const m = me();
   openSheet('playmat', `
