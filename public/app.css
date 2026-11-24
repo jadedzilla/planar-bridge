@@ -335,7 +335,7 @@ html, body { background: var(--table); }
 /* hexagon outline of a d20 with three soft facets, then its top face */
 .spindown::before {
   clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
-  background: conic-gradient(from 30deg at 50% 55%,
+  background: conic-gradient(from 30deg at 50% 50%,
     color-mix(in srgb, var(--die) 78%, #000) 0 120deg,
     color-mix(in srgb, var(--die) 62%, #000) 120deg 240deg,
     color-mix(in srgb, var(--die) 90%, #fff) 240deg 360deg);
@@ -399,3 +399,7 @@ html, body { background: var(--table); }
 }
 .piles { padding-top: 14px; }
 .pile .count:empty { display: none; }
+
+/* Life number centred on the die: the top face is a smaller hexagon around it */
+.spindown::after { inset: 18% 16%; clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%); }
+.spindown .val, .me-life .spindown .val, .edge-die .val { margin-top: 0 !important; text-align: center; line-height: 1; }
