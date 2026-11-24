@@ -12,7 +12,7 @@ const { WebSocketServer } = require('ws');
 const PORT = process.env.PORT || 3000;
 const PUBLIC = path.join(__dirname, 'public');
 const MAX_PLAYERS = 4;
-const ZONES = ['library', 'hand', 'battlefield', 'graveyard', 'exile'];
+const ZONES = ['library', 'hand', 'battlefield', 'graveyard', 'exile', 'command'];
 const SEAT_COLORS = ['#e0a526', '#3b8fd9', '#d9534f', '#3fae6a'];
 const ROOM_IDLE_MS = 1000 * 60 * 60 * 6; // forget empty rooms after 6 hours
 
@@ -107,6 +107,9 @@ function removeFromZone(room, card) {
 function placeCard(room, card, toPlayer, toZone, opts = {}) {
   const p = player(room, toPlayer);
   if (!p || !ZONES.includes(toZone)) return false;
+  // Only a commander goes in or out of the command zone, and only its owner's.
+  if ((toZone === 'command' || card.loc.zone === 'command') && !card.commander) return false;
+  if (toZone === 'command' && toPlayer !== card.owner) return false;
   removeFromZone(room, card);
   const leavingBattlefield = card.loc.zone === 'battlefield' && toZone !== 'battlefield';
   card.loc = { player: toPlayer, zone: toZone };
@@ -124,6 +127,13 @@ function placeCard(room, card, toPlayer, toZone, opts = {}) {
   else if (typeof opts.index === 'number') list.splice(clamp(opts.index, 0, list.length), 0, card.id);
   else list.push(card.id);
   return true;
+}
+
+// Put a player's commander(s) in their command zone (deck load and reset).
+function commandersHome(room, p) {
+  for (const c of room.cards.values()) {
+    if (c.owner === p.id && c.commander) placeCard(room, c, p.id, 'command');
+  }
 }
 
 function clamp(v, lo, hi) {
@@ -164,6 +174,7 @@ function viewFor(room, viewerId) {
   const cardView = (id) => {
     const c = room.cards.get(id);
     const base = { id: c.id, owner: c.owner };
+    if (c.commander) base.commander = true;
     if (c.loc.zone === 'battlefield') Object.assign(base, { x: c.x, y: c.y, tapped: c.tapped, faceDown: c.faceDown, counters: c.counters });
     // Lets the receiving tablet animate a card sliding in from the sender's side.
     if (c.sentFrom && Date.now() - c.sentAt < 4000) Object.assign(base, { from: c.sentFrom, sentAt: c.sentAt });
@@ -183,6 +194,7 @@ function viewFor(room, viewerId) {
       color: SEAT_COLORS[p.seat],
       life: p.life,
       shuffles: p.shuffles || 0, // lets every tablet play the shuffle motion
+      hasCommander: [...room.cards.values()].some((c) => c.owner === p.id && c.commander),
       mat: p.mat ? p.matV : 0, // custom playmat version, fetched from /mat/<code>/<id>
       connected: p.connected,
       counts: Object.fromEntries(ZONES.map((z) => [z, p.zones[z].length])),
@@ -192,6 +204,7 @@ function viewFor(room, viewerId) {
         battlefield: p.zones.battlefield.map(cardView),
         graveyard: p.zones.graveyard.map(cardView),
         exile: p.zones.exile.map(cardView),
+        command: p.zones.command.map(cardView),
       },
     })),
   };
@@ -255,11 +268,7 @@ function handle(ws, msg) {
       }
       shuffle(me.zones.library);
       me.shuffles = (me.shuffles || 0) + 1;
-      // GUESS: there is no command zone yet, so commanders start on the battlefield's top-left corner.
-      let ci = 0;
-      for (const c of room.cards.values()) {
-        if (c.owner === me.id && c.commander) placeCard(room, c, me.id, 'battlefield', { x: 0.01 + 0.1 * ci++, y: 0.02 });
-      }
+      commandersHome(room, me);
       addLog(room, `${me.name} loaded a ${list.length} card deck and shuffled.`);
       break;
     }
@@ -364,8 +373,9 @@ function handle(ws, msg) {
       }
       shuffle(me.zones.library);
       me.shuffles = (me.shuffles || 0) + 1;
+      commandersHome(room, me);
       me.life = room.startingLife;
-      addLog(room, `${me.name} reset: all their cards back in library, shuffled, life ${me.life}.`);
+      addLog(room, `${me.name} reset: all their cards back in library (commanders in the command zone), shuffled, life ${me.life}.`);
       break;
     }
     case 'seat': {

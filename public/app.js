@@ -2,7 +2,7 @@
 'use strict';
 
 const $ = (sel, el = document) => el.querySelector(sel);
-const ZONE_LABEL = { library: 'Library', hand: 'Hand', battlefield: 'Battlefield', graveyard: 'Graveyard', exile: 'Exile' };
+const ZONE_LABEL = { library: 'Library', hand: 'Hand', battlefield: 'Battlefield', graveyard: 'Graveyard', exile: 'Exile', command: 'Command zone' };
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const app = {
@@ -123,8 +123,8 @@ function playerById(id) { return app.s && app.s.players.find((p) => p.id === id)
 function findCard(id) {
   if (!app.s) return null;
   for (const p of app.s.players) {
-    for (const z of ['hand', 'battlefield', 'graveyard', 'exile']) {
-      const c = p.zones[z].find((x) => x.id === id);
+    for (const z of ['hand', 'battlefield', 'graveyard', 'exile', 'command']) {
+      const c = (p.zones[z] || []).find((x) => x.id === id);
       if (c) return { card: c, player: p, zone: z };
     }
   }
@@ -293,6 +293,9 @@ function createMat(p) {
       <button class="btn small mat-close" aria-label="Close this playmat">Close</button>
     </div>
     <div class="mat-body">
+      <div class="piles command-col">
+        <div class="pile command" data-drop="1" data-zone="command" data-player="${p.id}"><div class="spot"><div class="slot"></div><span class="count"></span></div><span class="pile-label">Command</span></div>
+      </div>
       <div class="battlefield" data-drop="1" data-zone="battlefield" data-player="${p.id}"></div>
       <div class="piles">
         <div class="pile library" data-drop="1" data-zone="library" data-player="${p.id}"><div class="spot"><div class="library-back"></div><span class="count"></span></div><span class="pile-label">Library</span></div>
@@ -362,7 +365,9 @@ function updateMat(mat, p, used) {
   if (seen != null && p.shuffles > seen) replay(back, 'shuffling');
   app.shuffleSeen.set(p.id, p.shuffles);
 
-  for (const z of ['graveyard', 'exile']) {
+  // Command zone: shown for players whose deck has a commander.
+  $('.command-col', mat).hidden = !p.hasCommander;
+  for (const z of ['graveyard', 'exile', 'command']) {
     const pile = $('.pile.' + z, mat);
     const list = p.zones[z];
     $('.count', pile).textContent = list.length || '';
@@ -693,6 +698,7 @@ function sendFlick(d, to, vx, vy) {
 function finishDrag(d, x, y) {
   const target = dropTargetAt(x, y);
   cleanupDrag(d);
+  if (target && !commandOk(d, target)) return toast('Only your commander goes in your command zone.');
   app.settled.set(d.id, performance.now());
   if (!target) return;
   const toZone = target.dataset.zone;
@@ -721,6 +727,16 @@ function finishDrag(d, x, y) {
     msg.index = idx < 0 ? cards.length : idx;
   }
   send(msg);
+}
+
+// Only commanders move in or out of the command zone (the server checks too).
+function commandOk(d, target) {
+  const into = target.dataset.zone === 'command';
+  const outOf = d.node.closest && d.node.closest('.pile.command');
+  if (!into && !outOf) return true;
+  if (d.fromLibrary) return false;
+  const f = findCard(d.id);
+  return !!(f && f.card.commander && (!into || target.dataset.player === f.card.owner));
 }
 
 function onClick(d) {
@@ -791,12 +807,15 @@ $('#sheetWrap').addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSheet(); });
 
 function moveRows(cardId) {
+  const f = findCard(cardId);
+  const cmdr = f && f.card.commander ? f.card : null;
   const order = [me(), ...app.s.players.filter((p) => p.id !== app.s.you).sort((a, b) => a.seat - b.seat)];
   return order.map((p) => `
     <div class="move-row" style="--seat:${p.color}">
       <div class="who"><span class="dot"></span>${esc(p.id === app.s.you ? 'You' : p.name)}</div>
       <div class="chips">
         ${['hand', 'battlefield', 'graveyard', 'exile'].map((z) => `<button class="chip" data-move="${z}" data-player="${p.id}">${ZONE_LABEL[z]}</button>`).join('')}
+        ${cmdr && p.id === cmdr.owner ? `<button class="chip" data-move="command" data-player="${p.id}">Command zone</button>` : ''}
         <button class="chip" data-move="library" data-player="${p.id}">Library top</button>
         <button class="chip" data-move="library" data-bottom="1" data-player="${p.id}">Library bottom</button>
       </div>
@@ -911,7 +930,7 @@ function renderPileSheet() {
   const sheet = $('#sheet');
   sheet.innerHTML = `
     <button class="btn small sheet-close" data-close>Close</button>
-    <h3>${esc(p.id === app.s.you ? 'Your' : p.name + "'s")} ${zone} (${list.length})</h3>
+    <h3>${esc(p.id === app.s.you ? 'Your' : p.name + "'s")} ${ZONE_LABEL[zone].toLowerCase()} (${list.length})</h3>
     <p class="note">Newest first. Tap a card to move it, or drag it onto the table.</p>
     <div class="grid-cards">${list.length ? '' : '<p class="muted">Empty.</p>'}</div>`;
   const grid = $('.grid-cards', sheet);
@@ -1158,7 +1177,7 @@ function openDeckSheet(opts = {}) {
     <label class="field">Deck name
       <input id="deckName" maxlength="60" placeholder="Optional, e.g. Mono-red aggro" value="${esc(editing ? editing.name : '')}">
     </label>
-    <p class="note">Paste a deck list, one card per line, like <code>4 Lightning Bolt</code>. Export from Moxfield, Archidekt, MTG Arena, MTGO and most other deckbuilders works ("Export → Text"). Lines under a <code>Sideboard</code> heading are skipped. Cards under a <code>Commander</code> heading start on your battlefield.</p>
+    <p class="note">Paste a deck list, one card per line, like <code>4 Lightning Bolt</code>. Export from Moxfield, Archidekt, MTG Arena, MTGO and most other deckbuilders works ("Export → Text"). Lines under a <code>Sideboard</code> heading are skipped. Cards under a <code>Commander</code> heading start in your command zone.</p>
     <textarea id="deckText" spellcheck="false" placeholder="4 Lightning Bolt&#10;20 Mountain">${esc(saved)}</textarea>
     <div class="row">
       <button class="btn primary" id="deckLoad">${mode === 'landing' ? 'Save deck' : 'Load deck'}</button>
