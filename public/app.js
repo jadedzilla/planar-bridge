@@ -944,8 +944,8 @@ function openDeckSheet(opts = {}) {
     <label class="field">Deck name
       <input id="deckName" maxlength="60" placeholder="Optional, e.g. Mono-red aggro" value="${esc(editing ? editing.name : '')}">
     </label>
-    <p class="note">Paste a deck list, one card per line, like <code>4 Lightning Bolt</code>. Export from Moxfield, Archidekt, MTG Arena, MTGO and most other deckbuilders works ("Export → Text"). Lines under a <code>Sideboard</code> heading are skipped. Cards under a <code>Commander</code> heading start on your battlefield.</p>
-    <textarea id="deckText" spellcheck="false" placeholder="4 Lightning Bolt&#10;20 Mountain">${esc(saved)}</textarea>
+    <p class="note">Paste a public Moxfield deck link, or a deck list with one card per line, like <code>4 Lightning Bolt</code>. Export from Moxfield, Archidekt, MTG Arena, MTGO and most other deckbuilders works ("Export → Text"). Lines under a <code>Sideboard</code> heading are skipped. Cards under a <code>Commander</code> heading start on your battlefield.</p>
+    <textarea id="deckText" spellcheck="false" placeholder="https://moxfield.com/decks/…&#10;or&#10;4 Lightning Bolt&#10;20 Mountain">${esc(saved)}</textarea>
     <div class="row">
       <button class="btn primary" id="deckLoad">${mode === 'landing' ? 'Save deck' : 'Load deck'}</button>
       <button class="btn" id="deckSample">Use sample deck</button>
@@ -954,7 +954,7 @@ function openDeckSheet(opts = {}) {
     </div>
     <div class="guess">${mode === 'landing'
       ? 'Saved decks stay on this device, in this browser. Cards are matched on Scryfall once, when you save.'
-      : 'Loading a deck replaces all of your current cards, wherever they are on the table, and shuffles them into your library.'} Deckbuilder links aren't supported yet; paste the exported list.</div>`,
+      : 'Loading a deck replaces all of your current cards, wherever they are on the table, and shuffles them into your library.'} Moxfield links work for public decks. For other deckbuilders, paste the exported list.</div>`,
   { mode, editId: editing ? editing.id : null });
   $('#deckSample').onclick = () => { $('#deckText').value = SAMPLE_DECK; };
   $('#deckLoad').onclick = () => importDeck($('#deckText').value);
@@ -1078,11 +1078,42 @@ async function scryfallLookupOne(name) {
   return null;
 }
 
+// A pasted Moxfield deck link, e.g. https://www.moxfield.com/decks/AbC123xyz
+function moxfieldId(text) {
+  const m = String(text).trim().match(/^(?:https?:\/\/)?(?:www\.)?moxfield\.com\/decks\/([A-Za-z0-9_-]+)\/?(?:[?#].*)?$/i);
+  return m ? m[1] : null;
+}
+
+// The server fetches the deck (Moxfield can't be called from the browser) and
+// returns it as a plain text list.
+async function fetchMoxfieldDeck(id) {
+  const res = await fetch('/api/moxfield/' + encodeURIComponent(id), { headers: { Accept: 'application/json' } });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Could not load that Moxfield deck.');
+  return data;
+}
+
 async function importDeck(text) {
   const status = $('#deckStatus');
+  // Keep what the player pasted (the link) as the deck's saved text.
+  const pasted = text.trim();
+  try { localStorage.setItem('ps:deck', pasted); } catch {}
+  const mox = moxfieldId(pasted);
+  if (mox) {
+    $('#deckLoad').disabled = true;
+    status.textContent = 'Getting the deck from Moxfield…';
+    try {
+      const deck = await fetchMoxfieldDeck(mox);
+      text = deck.text;
+      if (deck.name && $('#deckName') && !$('#deckName').value.trim()) $('#deckName').value = deck.name;
+    } catch (err) {
+      $('#deckLoad').disabled = false;
+      status.textContent = err.message;
+      return;
+    }
+  }
   const entries = parseDeck(text);
-  if (!entries.length) return (status.textContent = 'No cards found in that list.');
-  try { localStorage.setItem('ps:deck', text); } catch {}
+  if (!entries.length) { $('#deckLoad').disabled = false; return (status.textContent = 'No cards found in that list.'); }
   $('#deckLoad').disabled = true;
   status.textContent = 'Looking up cards on Scryfall…';
   const resolved = new Map(); // entry index -> scryfall card
@@ -1138,7 +1169,7 @@ async function importDeck(text) {
     for (let k = 0; k < e.qty; k++) cards.push({ name, img: im.img, back: im.back, commander: e.commander });
   });
   $('#deckLoad').disabled = false;
-  finishImport(text, cards, notFound);
+  finishImport(mox ? pasted : text, cards, notFound);
 }
 
 // ---------- Top bar ----------
