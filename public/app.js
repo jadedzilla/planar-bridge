@@ -493,6 +493,14 @@ function paintCard(el, c, zone, holder) {
   el.classList.toggle('tapped', zone === 'battlefield' && !!c.tapped);
   const img = el.querySelector('img');
   const src = c.transformed && c.back ? c.back : c.img;
+  // Turning a card over (transforming a double-faced card, or face down / up)
+  // gives it a quick flip on the table.
+  const face = hidden ? 'back' : (c.transformed && c.back ? 'second' : 'front');
+  const flipped = el.dataset.face && el.dataset.face !== face && el.isConnected && el.dataset.cardId === c.id;
+  el.dataset.face = face;
+  if (flipped && el.animate && !reduceMotion.matches) {
+    el.animate([{ rotate: 'y 0deg' }, { rotate: 'y 90deg', offset: 0.5 }, { rotate: 'y 0deg' }], { duration: 320, easing: 'ease-in-out' });
+  }
   if (!hidden && src && img.getAttribute('src') !== src) img.src = src;
   if (!src) img.removeAttribute('src');
   img.style.visibility = src ? '' : 'hidden';
