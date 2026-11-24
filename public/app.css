@@ -565,3 +565,16 @@ html, body { background: var(--table); }
   background: var(--mat-grain) 0 0 / 180px 180px, var(--mat-edge-light), var(--mat-img) center / cover no-repeat;
   background-blend-mode: soft-light, normal, normal;
 }
+
+/* Stitched edge: a thin binding around the rim of the mat, with a fine
+   line of stitches just inside it. Kept faint so it reads as texture. */
+.mat-body::after {
+  content: ""; position: absolute; pointer-events: none;
+  top: calc(var(--mt) + 5px); right: calc(var(--mr) + 5px); bottom: calc(var(--mb) + 5px); left: calc(var(--ml) + 5px);
+  border-radius: 15px;
+  border: 1.5px dashed color-mix(in srgb, var(--seat, #fff) 30%, rgba(255,255,255,.22));
+  opacity: .55;
+  transition: bottom .25s ease;
+}
+.mat-body::before { outline: 4px solid rgba(0,0,0,.14); outline-offset: -4px; }
+.mat.has-art .mat-body::after { border-color: rgba(255,255,255,.4); opacity: .5; }
