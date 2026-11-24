@@ -25,6 +25,14 @@ const MIME = {
   '.json': 'application/json',
 };
 
+// A JPEG sent as a data URL (already shrunk on the tablet), or null if it isn't one or is too big.
+function jpegFrom(data, maxBytes) {
+  const m = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/.exec(String(data || ''));
+  if (!m) return null;
+  const buf = Buffer.from(m[1], 'base64');
+  return buf.length <= maxBytes && buf[0] === 0xff && buf[1] === 0xd8 ? buf : null;
+}
+
 // ---------- HTTP (static files) ----------
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
@@ -37,6 +45,15 @@ const server = http.createServer((req, res) => {
     if (!pl || !pl.mat) { res.writeHead(404); return res.end(); }
     res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=86400' });
     return res.end(pl.mat);
+  }
+  // The card back of the deck a player loaded, if it has a custom one: /back/<code>/<player id>
+  const bm = p.match(/^\/back\/([A-Z0-9]{5})\/([\w-]{1,64})$/);
+  if (bm) {
+    const room = rooms.get(bm[1]);
+    const pl = room && player(room, bm[2]);
+    if (!pl || !pl.cardBack) { res.writeHead(404); return res.end(); }
+    res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=86400' });
+    return res.end(pl.cardBack);
   }
   if (p === '/' || p.startsWith('/s/')) p = '/index.html';
   const file = path.normalize(path.join(PUBLIC, p));
@@ -196,6 +213,7 @@ function viewFor(room, viewerId) {
       shuffles: p.shuffles || 0, // lets every tablet play the shuffle motion
       hasCommander: [...room.cards.values()].some((c) => c.owner === p.id && c.commander),
       mat: p.mat ? p.matV : 0, // custom playmat version, fetched from /mat/<code>/<id>
+      cardBack: p.cardBack ? p.backV : 0, // custom card back version, fetched from /back/<code>/<id>
       connected: p.connected,
       counts: Object.fromEntries(ZONES.map((z) => [z, p.zones[z].length])),
       zones: {
@@ -266,6 +284,9 @@ function handle(ws, msg) {
         me.zones.library.push(id);
         if (c.commander) cardObj.commander = true;
       }
+      // Each deck can bring its own card back; a deck without one uses the official back.
+      me.cardBack = jpegFrom(msg.cardBack, 120 * 1024);
+      me.backV = (me.backV || 0) + 1;
       shuffle(me.zones.library);
       me.shuffles = (me.shuffles || 0) + 1;
       commandersHome(room, me);
@@ -392,10 +413,8 @@ function handle(ws, msg) {
     case 'playmat': {
       // A custom playmat picture, already shrunk to a JPEG on the tablet. null removes it.
       if (msg.data == null) { me.mat = null; me.matV = (me.matV || 0) + 1; break; }
-      const m = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/.exec(String(msg.data));
-      if (!m) return send(ws, { type: 'error', error: "That picture couldn't be used as a playmat." });
-      const buf = Buffer.from(m[1], 'base64');
-      if (buf.length > 240 * 1024 || buf[0] !== 0xff || buf[1] !== 0xd8) return send(ws, { type: 'error', error: "That picture couldn't be used as a playmat." });
+      const buf = jpegFrom(msg.data, 240 * 1024);
+      if (!buf) return send(ws, { type: 'error', error: "That picture couldn't be used as a playmat." });
       me.mat = buf;
       me.matV = (me.matV || 0) + 1;
       break;

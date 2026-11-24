@@ -596,7 +596,15 @@ html, body { background: var(--table); }
     linear-gradient(160deg, #3a3550, #26223a);
 }
 .card.back, .library-back {
-  background: var(--official-back) center / 100% 100% no-repeat, var(--drawn-back);
+  background: var(--card-back, var(--official-back)) center / cover no-repeat, var(--drawn-back);
   background-clip: padding-box;
 }
-.sheet-card.back, .deck-top.back { background: var(--official-back) center / 100% 100% no-repeat, var(--drawn-back); }
+.sheet-card.back, .deck-top.back, .card-back-art { background: var(--card-back, var(--official-back)) center / cover no-repeat, var(--drawn-back); }
+
+/* Card back picker in the deck sheet */
+.back-field { display: flex; gap: 14px; align-items: center; margin: 12px 0 4px; }
+.back-preview { width: 72px; flex: none; aspect-ratio: 63 / 88; border-radius: 4.5% / 3.4%; box-shadow: 0 1px 0 rgba(255,255,255,.08) inset, 0 4px 12px rgba(0,0,0,.35); }
+.back-side { flex: 1; min-width: 0; }
+.back-title { font-weight: 600; display: block; margin-bottom: 6px; }
+.back-side .row { margin: 0; }
+.back-side .note { margin: 6px 0 0; }
