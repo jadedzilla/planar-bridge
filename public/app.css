@@ -608,3 +608,59 @@ html, body { background: var(--table); }
 .back-title { font-weight: 600; display: block; margin-bottom: 6px; }
 .back-side .row { margin: 0; }
 .back-side .note { margin: 6px 0 0; }
+
+/* --- Foil finishes ---
+   Traditional foil: the whole card is printed on a metallic layer, so every
+   part of it catches the light. Tilting it sends a broad, soft band of
+   pastel rainbow across the card, brightest where the ink is light; dark
+   ink stays dark. Straight on it just looks a little brighter and glossier.
+   Foil-etched: there's no foil laminate. The metal sits under a glossy
+   varnish on the frame only, with a fine granular sparkle; the art and text
+   box are matte. Its shine is silvery, subtle and easy to miss straight on.
+   The sheen moves with --tilt-x / --tilt-y (device tilt or pointer) and with
+   where the card lies on the table (--fx / --fy). */
+:root { --tilt-x: 0; --tilt-y: 0; }
+.card { --fx: .5; --fy: .5; }
+.card .foil { display: none; position: absolute; inset: 2.2% 2.4%; border-radius: 4.5%/3.3%; pointer-events: none; }
+.card[data-finish] .foil { --sx: calc(var(--fx) - .5 + var(--tilt-x) * .9); --sy: calc(var(--fy) - .5 + var(--tilt-y) * .9); }
+.card[data-finish="foil"] .foil {
+  display: block;
+  background:
+    linear-gradient(115deg,
+      transparent 26%,
+      hsl(340 85% 78% / .5) 34%, hsl(40 90% 74% / .5) 39%, hsl(95 70% 72% / .45) 44%,
+      hsl(180 80% 72% / .5) 49%, hsl(225 85% 78% / .5) 54%, hsl(285 75% 80% / .5) 59%,
+      transparent 67%),
+    linear-gradient(115deg, transparent 42%, rgba(255,255,255,.5) 50%, transparent 58%),
+    linear-gradient(160deg, rgba(255,255,255,.14), rgba(255,255,255,0) 45%, rgba(255,255,255,.08));
+  background-size: 260% 260%, 320% 320%, 100% 100%;
+  background-position:
+    calc(50% + var(--sx) * 45%) calc(50% + var(--sy) * 45%),
+    calc(50% + var(--sx) * 60%) calc(50% + var(--sy) * 60%),
+    0 0;
+  background-repeat: no-repeat;
+  mix-blend-mode: color-dodge;
+  opacity: .42;
+}
+.card[data-finish="etched"] .foil {
+  display: block;
+  background:
+    linear-gradient(115deg, transparent 32%, rgba(236,240,248,.75) 46%, rgba(255,250,238,.85) 50%, rgba(236,240,248,.75) 54%, transparent 68%),
+    var(--foil-grain) 0 0 / 90px 90px,
+    linear-gradient(rgba(200,206,216,.16), rgba(200,206,216,.16));
+  background-size: 300% 300%, 90px 90px, 100% 100%;
+  background-position: calc(50% + var(--sx) * 50%) calc(50% + var(--sy) * 50%), 0 0, 0 0;
+  background-repeat: no-repeat, repeat, no-repeat;
+  mix-blend-mode: color-dodge;
+  opacity: .5;
+  /* Frame only: cut out the art window and the text box (modern frame proportions). */
+  -webkit-mask: linear-gradient(#000 0 0), linear-gradient(#000 0 0) 50% 19.5% / 87% 45% no-repeat, linear-gradient(#000 0 0) 50% 92% / 87% 30% no-repeat;
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0), linear-gradient(#000 0 0) 50% 19.5% / 87% 45% no-repeat, linear-gradient(#000 0 0) 50% 92% / 87% 30% no-repeat;
+  mask-composite: exclude;
+}
+:root {
+  /* Fine metallic grain for etched foil: sparse bright flecks. */
+  --foil-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='90' height='90'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.6' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .6  0 0 0 0 .6  0 0 0 0 .62  0 0 0 7 -4.9'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23f)'/%3E%3C/svg%3E");
+}
+@media (prefers-reduced-motion: reduce) { .card[data-finish] .foil { transition: none; } }
