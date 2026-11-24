@@ -619,12 +619,12 @@ html, body { background: var(--table); }
    Foil-etched: there's no foil laminate. The metal sits under a glossy
    varnish on the frame only, with a fine granular sparkle; the art and text
    box are matte. Its shine is silvery, subtle and easy to miss straight on.
-   The sheen moves with --tilt-x / --tilt-y (device tilt or pointer) and with
-   where the card lies on the table (--fx / --fy). */
-:root { --tilt-x: 0; --tilt-y: 0; }
-.card { --fx: .5; --fy: .5; }
+   On the table the sheen stays still. Only while a card is carried does it
+   shift, with where it is (--fx / --fy) and how it tilts (--tilt-x / --tilt-y). */
+.card { --fx: .5; --fy: .5; --fx0: .5; --fy0: .5; --tilt-x: 0; --tilt-y: 0; }
 .card .foil { display: none; position: absolute; inset: 2.2% 2.4%; border-radius: 4.5%/3.3%; pointer-events: none; }
-.card[data-finish] .foil { --sx: calc(var(--fx) - .5 + var(--tilt-x) * .9); --sy: calc(var(--fy) - .5 + var(--tilt-y) * .9); }
+.card[data-finish] .foil { --sx: 0; --sy: 0; }
+.ghost[data-finish] .foil { --sx: calc((var(--fx) - var(--fx0)) * 1.5 + var(--tilt-x) * .9); --sy: calc((var(--fy) - var(--fy0)) * 1.5 + var(--tilt-y) * .9); }
 .card[data-finish="foil"] .foil {
   display: block;
   background:

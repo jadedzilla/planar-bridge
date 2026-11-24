@@ -486,43 +486,9 @@ function makeCardEl() {
 }
 
 // ---------- Foil ----------
-// Foil cards catch the light as the viewing angle changes. On a tablet the
-// angle comes from tilting the device; on a computer, from the pointer.
-// --tilt-x / --tilt-y run from -1 to 1 and feed the sheen in app.css.
-let tiltOn = false;
-function watchTilt() {
-  if (tiltOn) return;
-  tiltOn = true;
-  const root = document.documentElement.style;
-  let tx = 0, ty = 0, gx = 0, gy = 0, base = null, frame = 0, fromDevice = false;
-  const apply = () => {
-    frame = 0;
-    gx += (tx - gx) * 0.35; gy += (ty - gy) * 0.35; // ease, like a card catching light
-    root.setProperty('--tilt-x', gx.toFixed(3));
-    root.setProperty('--tilt-y', gy.toFixed(3));
-    if (Math.abs(tx - gx) > 0.002 || Math.abs(ty - gy) > 0.002) frame = requestAnimationFrame(apply);
-  };
-  const kick = () => { if (!frame) frame = requestAnimationFrame(apply); };
-  const clamp = (v) => Math.max(-1, Math.min(1, v));
-  addEventListener('deviceorientation', (e) => {
-    if (e.beta == null || e.gamma == null) return;
-    fromDevice = true;
-    // Relative to how the tablet was held when the game started, re-centred slowly.
-    if (!base) base = { b: e.beta, g: e.gamma };
-    base.b += (e.beta - base.b) * 0.004; base.g += (e.gamma - base.g) * 0.004;
-    tx = clamp((e.gamma - base.g) / 25); ty = clamp((e.beta - base.b) / 25);
-    kick();
-  });
-  addEventListener('pointermove', (e) => {
-    if (fromDevice || e.pointerType === 'touch') return;
-    tx = clamp((e.clientX / innerWidth - 0.5) * 1.4); ty = clamp((e.clientY / innerHeight - 0.5) * 1.4);
-    kick();
-  }, { passive: true });
-  // iPad and iPhone only share motion after a tap asks for it.
-  if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function') {
-    addEventListener('pointerup', () => { DeviceOrientationEvent.requestPermission().catch(() => {}); }, { once: true });
-  }
-}
+// A foil card lying on the table keeps its sheen still. Only a card you've
+// picked up catches the light differently: its sheen shifts as you carry it
+// and as it tilts with its momentum (see paintGhost).
 
 // Every tablet keeps both faces of each card on the playmats (battlefields),
 // and every card back at the table, loaded and decoded ahead of time. Then a flip, transform or
@@ -573,7 +539,6 @@ function paintCard(el, c, zone, holder) {
     img.style.visibility = src ? '' : 'hidden';
     el.querySelector('.cname').textContent = hidden ? '' : c.name || '';
     el.dataset.finish = !hidden && c.finish ? c.finish : '';
-    if (c.finish) watchTilt();
     el.title = hidden ? 'Hidden card' : c.name;
   };
   // Turning a card over (transforming a double-faced card, or face down / up)
@@ -615,9 +580,6 @@ function paintCard(el, c, zone, holder) {
   if (zone === 'battlefield') {
     el.style.left = (c.x * 100).toFixed(2) + '%';
     el.style.top = (c.y * 100).toFixed(2) + '%';
-    // Where the card lies changes the angle light hits it, so the foil sheen shifts as it moves.
-    el.style.setProperty('--fx', c.x.toFixed(3));
-    el.style.setProperty('--fy', c.y.toFixed(3));
   } else {
     el.style.left = el.style.top = '';
   }
@@ -758,6 +720,11 @@ function startDrag() {
   ghost.style.transformOrigin = `${drag.ox}px ${drag.oy}px`;
   drag.rot0 = cardTurn(drag.src);
   ghost.style.transform = `rotate(${drag.rot0}deg)`;
+  // Foil sheen starts exactly as it looked on the table, then shifts as the card travels.
+  ghost.style.setProperty('--fx0', (drag.x / innerWidth).toFixed(3));
+  ghost.style.setProperty('--fy0', (drag.y / innerHeight).toFixed(3));
+  ghost.style.setProperty('--fx', (drag.x / innerWidth).toFixed(3));
+  ghost.style.setProperty('--fy', (drag.y / innerHeight).toFixed(3));
   document.body.appendChild(ghost);
   drag.ghost = ghost;
   drag.size = drag.w;
@@ -809,6 +776,9 @@ function sizeGhostFor(d, t) {
 const TILT_MAX = 12; // degrees
 function paintGhost(d) {
   const t = d.snap ? { x: 0, y: 0, z: -2 } : d.tilt || { x: 0, y: 0, z: 0 }; // snapped: lies square in the pile
+  // The carried card's tilt also turns its foil sheen.
+  d.ghost.style.setProperty('--tilt-x', (t.y / TILT_MAX).toFixed(3));
+  d.ghost.style.setProperty('--tilt-y', (-t.x / TILT_MAX).toFixed(3));
   d.ghost.style.transform = `perspective(900px) rotateX(${t.x.toFixed(2)}deg) rotateY(${t.y.toFixed(2)}deg) rotate(${(2 + t.z).toFixed(2)}deg) scale(${d.scale.toFixed(3)})`;
 }
 
