@@ -53,6 +53,7 @@ function onMessage(msg) {
   } else if (msg.type === 'state') {
     app.s = msg.state;
     render();
+    if (app.pendingDeck) bringPendingDeck();
     if (app.library && sheetKind === 'library') send({ type: 'searchLibrary', quiet: true });
   } else if (msg.type === 'library') {
     app.library = msg.cards;
@@ -60,7 +61,7 @@ function onMessage(msg) {
   } else if (msg.type === 'error') {
     if (!$('#game').hidden && app.s) toast(msg.error);
     else showLanding(msg.error);
-    if (!app.s) { app.code = null; app.playerId = null; }
+    if (!app.s) { app.code = null; app.playerId = null; app.pendingDeck = null; }
   } else if (msg.type === 'left') {
     try { localStorage.removeItem('ps:' + app.code); } catch {}
     app.code = null; app.playerId = null; app.s = null;
@@ -80,6 +81,7 @@ function rememberName(n) { try { localStorage.setItem('ps:name', n); } catch {} 
 $('#createBtn').onclick = () => {
   const name = $('#nameInput').value.trim();
   rememberName(name);
+  app.pendingDeck = pickedDeck();
   send({ type: 'create', name, startingLife: Number($('#lifeSelect').value) });
 };
 $('#joinBtn').onclick = () => {
@@ -89,12 +91,14 @@ $('#joinBtn').onclick = () => {
   rememberName(name);
   let pid = null;
   try { pid = localStorage.getItem('ps:' + code); } catch {}
+  app.pendingDeck = pickedDeck();
   send({ type: 'join', code, name, playerId: pid });
 };
 $('#codeInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#joinBtn').click(); });
 
 function boot() {
   $('#nameInput').value = savedName();
+  renderLandingDecks();
   const m = location.pathname.match(/^\/s\/([A-Za-z0-9]{5})/);
   if (m) {
     const code = m[1].toUpperCase();
@@ -807,22 +811,185 @@ const SAMPLE_DECK = `// Sample: mono-red aggro (60 cards)
 2 Delver of Secrets
 20 Mountain`;
 
-function openDeckSheet() {
+// ---------- Saved decks ----------
+// GUESS: decks are saved on this device only (localStorage), with no accounts.
+// Each deck keeps its pasted list plus the cards already matched on Scryfall,
+// so bringing it to a table is instant and needs no lookups.
+function loadDecks() {
+  try { return JSON.parse(localStorage.getItem('ps:decks') || '[]').filter((d) => d && d.id && Array.isArray(d.cards)); } catch { return []; }
+}
+function storeDecks(decks) { localStorage.setItem('ps:decks', JSON.stringify(decks)); }
+function deckById(id) { return loadDecks().find((d) => d.id === id) || null; }
+function deckSize(d) { return d.cards.reduce((n, c) => n + (c.qty || 1), 0); }
+function pickedDeckId() { try { return localStorage.getItem('ps:deckPick') || ''; } catch { return ''; } }
+function setPickedDeck(id) { try { localStorage.setItem('ps:deckPick', id || ''); } catch {} }
+function pickedDeck() { const id = pickedDeckId(); return id ? deckById(id) : null; }
+
+// Same cards are stored once with a count, to keep storage small.
+function packCards(cards) {
+  const out = [];
+  const byKey = new Map();
+  for (const c of cards) {
+    const key = [c.name, c.img, c.back, c.commander ? 1 : 0].join('|');
+    const hit = byKey.get(key);
+    if (hit) hit.qty++;
+    else { const e = { name: c.name, img: c.img, back: c.back, commander: !!c.commander, qty: 1 }; byKey.set(key, e); out.push(e); }
+  }
+  return out;
+}
+function unpackCards(packed) {
+  const out = [];
+  for (const c of packed) for (let k = 0; k < (c.qty || 1); k++) out.push({ name: c.name, img: c.img, back: c.back, commander: c.commander });
+  return out;
+}
+
+function guessDeckName(text, cards) {
+  const cmdrs = [...new Set(cards.filter((c) => c.commander).map((c) => c.name))];
+  if (cmdrs.length) return cmdrs.join(' & ');
+  const first = text.split(/\r?\n/).map((l) => l.trim()).find(Boolean) || '';
+  const m = first.match(/^(?:\/\/|#)\s*(?:name\s*:\s*)?(.+)$/i);
+  if (m) return m[1].slice(0, 60);
+  return 'Deck ' + (loadDecks().length + 1);
+}
+
+// Returns the saved deck, or throws if the device has no room left.
+function saveDeck({ id, name, text, cards }) {
+  const decks = loadDecks();
+  const deck = { id: id || 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: name.slice(0, 60), text, cards: packCards(cards), updated: Date.now() };
+  const i = decks.findIndex((d) => d.id === deck.id);
+  if (i >= 0) decks[i] = deck; else decks.push(deck);
+  storeDecks(decks);
+  return deck;
+}
+function deleteDeck(id) {
+  storeDecks(loadDecks().filter((d) => d.id !== id));
+  if (pickedDeckId() === id) setPickedDeck('');
+}
+
+function renderLandingDecks() {
+  const list = $('#deckList');
+  const decks = loadDecks();
+  let pick = pickedDeckId();
+  if (pick && !decks.some((d) => d.id === pick)) pick = '';
+  const row = (d) => `
+    <label class="deck-row">
+      <input type="radio" name="deckPick" value="${esc(d.id)}" ${pick === d.id ? 'checked' : ''}>
+      <span class="deck-name">${esc(d.name)}</span>
+      <span class="deck-count">${deckSize(d)} cards</span>
+      <button class="btn small" data-deck-edit="${esc(d.id)}">Edit</button>
+      <button class="btn small danger" data-deck-del="${esc(d.id)}">Delete</button>
+    </label>`;
+  list.innerHTML = decks.length
+    ? decks.map(row).join('') + `
+      <label class="deck-row">
+        <input type="radio" name="deckPick" value="" ${pick ? '' : 'checked'}>
+        <span class="deck-name muted">No deck, I'll load one at the table</span>
+      </label>`
+    : '<p class="note">No saved decks yet. Import one now so it is ready when you sit down.</p>';
+}
+$('#deckList').addEventListener('change', (e) => { if (e.target.name === 'deckPick') setPickedDeck(e.target.value); });
+$('#deckList').addEventListener('click', (e) => {
+  const edit = e.target.closest('[data-deck-edit]');
+  const del = e.target.closest('[data-deck-del]');
+  if (!edit && !del) return;
+  e.preventDefault(); // don't also pick the row
+  if (edit) return openDeckSheet({ mode: 'landing', editId: edit.dataset.deckEdit });
+  if (del.dataset.armed) { deleteDeck(del.dataset.deckDel); return renderLandingDecks(); }
+  del.dataset.armed = '1';
+  del.textContent = 'Tap again to delete';
+  setTimeout(() => { if (del.isConnected) { delete del.dataset.armed; del.textContent = 'Delete'; } }, 3000);
+});
+$('#addDeckBtn').onclick = () => openDeckSheet({ mode: 'landing' });
+
+// Right after sitting down: shuffle in the deck picked on the landing page,
+// unless this seat already has cards (rejoining a game in progress).
+function bringPendingDeck() {
+  const deck = app.pendingDeck;
+  const m = me();
+  if (!m) return;
+  app.pendingDeck = null;
+  const owned = Object.values(m.counts || {}).reduce((a, b) => a + b, 0);
+  if (owned > 0) return;
+  send({ type: 'loadDeck', cards: unpackCards(deck.cards) });
+  toast(`${deck.name} is shuffled into your library. Tap your library to draw.`);
+}
+
+function loadSavedDeck(id) {
+  const deck = deckById(id);
+  if (!deck) return;
+  setPickedDeck(deck.id);
+  send({ type: 'loadDeck', cards: unpackCards(deck.cards) });
+  closeSheet();
+  toast(`Loaded ${deck.name} (${deckSize(deck)} cards) and shuffled. Tap your library to draw.`);
+}
+
+// mode 'game': load onto the table (and optionally save). mode 'landing': save only.
+function openDeckSheet(opts = {}) {
+  const mode = opts.mode || 'game';
+  const editing = opts.editId ? deckById(opts.editId) : null;
+  const decks = mode === 'game' ? loadDecks() : [];
   let saved = '';
-  try { saved = localStorage.getItem('ps:deck') || ''; } catch {}
+  if (editing) saved = editing.text;
+  else if (mode === 'game') { try { saved = localStorage.getItem('ps:deck') || ''; } catch {} }
+  const savedRows = decks.map((d) => `
+    <div class="deck-row">
+      <span class="deck-name">${esc(d.name)}</span>
+      <span class="deck-count">${deckSize(d)} cards</span>
+      <button class="btn small primary" data-deck-load="${esc(d.id)}">Load</button>
+    </div>`).join('');
   openSheet('deck', `
     <button class="btn small sheet-close" data-close>Close</button>
-    <h3>Load a deck</h3>
+    <h3>${editing ? 'Edit deck' : mode === 'landing' ? 'Import a deck' : 'Load a deck'}</h3>
+    ${decks.length ? `<p class="note">Your saved decks</p><div class="deck-list" style="margin:6px 0 4px">${savedRows}</div><h4>Or import a new one</h4>` : ''}
+    <label class="field">Deck name
+      <input id="deckName" maxlength="60" placeholder="Optional, e.g. Mono-red aggro" value="${esc(editing ? editing.name : '')}">
+    </label>
     <p class="note">Paste a deck list, one card per line, like <code>4 Lightning Bolt</code>. Export from Moxfield, Archidekt, MTG Arena, MTGO and most other deckbuilders works ("Export → Text"). Lines under a <code>Sideboard</code> heading are skipped. Cards under a <code>Commander</code> heading start on your battlefield.</p>
     <textarea id="deckText" spellcheck="false" placeholder="4 Lightning Bolt&#10;20 Mountain">${esc(saved)}</textarea>
     <div class="row">
-      <button class="btn primary" id="deckLoad">Load deck</button>
+      <button class="btn primary" id="deckLoad">${mode === 'landing' ? 'Save deck' : 'Load deck'}</button>
       <button class="btn" id="deckSample">Use sample deck</button>
+      ${mode === 'game' ? '<label class="check"><input type="checkbox" id="deckSave" checked> Save to my decks</label>' : ''}
       <span id="deckStatus" class="note"></span>
     </div>
-    <div class="guess">Loading a deck replaces all of your current cards, wherever they are on the table, and shuffles them into your library. Deckbuilder links aren't supported yet; paste the exported list.</div>`);
+    <div class="guess">${mode === 'landing'
+      ? 'Saved decks stay on this device, in this browser. Cards are matched on Scryfall once, when you save.'
+      : 'Loading a deck replaces all of your current cards, wherever they are on the table, and shuffles them into your library.'} Deckbuilder links aren't supported yet; paste the exported list.</div>`,
+  { mode, editId: editing ? editing.id : null });
   $('#deckSample').onclick = () => { $('#deckText').value = SAMPLE_DECK; };
   $('#deckLoad').onclick = () => importDeck($('#deckText').value);
+  $('#sheet').querySelectorAll('[data-deck-load]').forEach((b) => { b.onclick = () => loadSavedDeck(b.dataset.deckLoad); });
+}
+
+// After the Scryfall lookup: save the deck and/or put it on the table, as the sheet asks.
+function finishImport(text, cards, notFound) {
+  const status = $('#deckStatus');
+  if (!cards.length) return (status.textContent = 'None of those cards were found on Scryfall.');
+  const opts = sheetData || { mode: 'game' };
+  const name = $('#deckName').value.trim() || guessDeckName(text, cards);
+  const wantSave = opts.mode === 'landing' || ($('#deckSave') && $('#deckSave').checked);
+  let deck = null;
+  let saveErr = '';
+  if (wantSave) {
+    try { deck = saveDeck({ id: opts.editId, name, text, cards }); } catch { saveErr = ' This device has no room left to save it.'; }
+  }
+  const missed = notFound.length ? ` Not found: ${notFound.join(', ')}` : '';
+  if (opts.mode === 'landing') {
+    if (deck) setPickedDeck(deck.id);
+    renderLandingDecks();
+    if (!deck) return (status.textContent = 'Could not save the deck.' + saveErr);
+    if (missed) return (status.textContent = `Saved ${name} (${cards.length} cards).${missed}`);
+    closeSheet();
+    return;
+  }
+  if (deck) setPickedDeck(deck.id);
+  send({ type: 'loadDeck', cards });
+  if (missed || saveErr) {
+    status.textContent = `Loaded ${cards.length} cards.${saveErr}${missed}`;
+  } else {
+    closeSheet();
+    toast(`Loaded ${cards.length} cards${deck ? ', saved to your decks,' : ''} and shuffled. Tap your library to draw.`);
+  }
 }
 
 // Parse common deck list formats into [{qty, name, set, num, commander}]
@@ -971,14 +1138,7 @@ async function importDeck(text) {
     for (let k = 0; k < e.qty; k++) cards.push({ name, img: im.img, back: im.back, commander: e.commander });
   });
   $('#deckLoad').disabled = false;
-  if (!cards.length) return (status.textContent = 'None of those cards were found on Scryfall.');
-  send({ type: 'loadDeck', cards });
-  if (notFound.length) {
-    status.textContent = `Loaded ${cards.length} cards. Not found: ${notFound.join(', ')}`;
-  } else {
-    closeSheet();
-    toast(`Loaded ${cards.length} cards and shuffled. Tap your library to draw.`);
-  }
+  finishImport(text, cards, notFound);
 }
 
 // ---------- Top bar ----------
