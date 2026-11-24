@@ -383,9 +383,9 @@ function handle(ws, msg) {
       // A custom playmat picture, already shrunk to a JPEG on the tablet. null removes it.
       if (msg.data == null) { me.mat = null; me.matV = (me.matV || 0) + 1; break; }
       const m = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/.exec(String(msg.data));
-      if (!m) return;
+      if (!m) return send(ws, { type: 'error', error: "That picture couldn't be used as a playmat." });
       const buf = Buffer.from(m[1], 'base64');
-      if (buf.length > 240 * 1024 || buf[0] !== 0xff || buf[1] !== 0xd8) return;
+      if (buf.length > 240 * 1024 || buf[0] !== 0xff || buf[1] !== 0xd8) return send(ws, { type: 'error', error: "That picture couldn't be used as a playmat." });
       me.mat = buf;
       me.matV = (me.matV || 0) + 1;
       break;
@@ -451,10 +451,14 @@ function join(ws, room, name, playerId) {
 }
 
 // ---------- WebSocket ----------
-const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 256 * 1024 });
+// Room for a playmat picture (about 300 KB of text) plus headroom.
+const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 512 * 1024 });
 wss.on('connection', (ws) => {
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
+  // A bad or oversized message closes just this connection (the tablet reconnects)
+  // instead of taking the whole server down.
+  ws.on('error', (e) => console.error('socket error:', e.code || e.message));
   ws.on('message', (data) => {
     let msg;
     try { msg = JSON.parse(data); } catch { return; }
