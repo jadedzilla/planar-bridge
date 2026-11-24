@@ -566,18 +566,62 @@ html, body { background: var(--table); }
   background-blend-mode: soft-light, normal, normal;
 }
 
-/* Stitched edge: a thin binding around the rim of the mat, with a fine
-   line of stitches just inside it. Kept faint so it reads as texture. */
+/* Stitched edge, like a cloth mousepad: a raised overlock binding wraps the
+   rim, made of tight thread loops in the mat's own colour. The loops run
+   across the binding, fan out round the corners, and the binding is shaded
+   as a soft rounded roll lit from above. All gradients, no images. */
 .mat-body::after {
-  content: ""; position: absolute; pointer-events: none;
-  top: calc(var(--mt) + 5px); right: calc(var(--mr) + 5px); bottom: calc(var(--mb) + 5px); left: calc(var(--ml) + 5px);
-  border-radius: 15px;
-  border: 1.5px dashed color-mix(in srgb, var(--seat, #fff) 30%, rgba(255,255,255,.22));
-  opacity: .55;
+  --r: 20px;                     /* matches the mat's corner radius */
+  --w: 7px;                      /* binding width */
+  --bind: color-mix(in srgb, var(--seat, #4a7a68) 10%, #2b2f36);
+  --hi: rgba(255,255,255,.13);   /* lit side of a thread */
+  --lo: rgba(0,0,0,.24);         /* gap between threads */
+  --thread: var(--hi) 0, rgba(255,255,255,0) .9px, var(--lo) 1.3px, rgba(0,0,0,0) 2.3px;
+  --thread-c: var(--hi) 0deg, rgba(255,255,255,0) 3.2deg, var(--lo) 4.6deg, rgba(0,0,0,0) 8deg;
+  --roll: rgba(0,0,0,.34), rgba(255,255,255,.07) 38%, rgba(255,255,255,0) 62%, rgba(0,0,0,.3);
+  --inner: calc(var(--r) - var(--w));
+  --mid: calc(var(--r) - var(--w) * .62);
+  --roll-c: rgba(0,0,0,.3) var(--inner), rgba(255,255,255,0) calc(var(--inner) + var(--w) * .38), rgba(255,255,255,.07) var(--mid), rgba(0,0,0,.34) var(--r);
+  --side: calc(100% - var(--r) * 2);
+  content: ""; position: absolute; pointer-events: none; z-index: 0;
+  top: var(--mt); right: var(--mr); bottom: var(--mb); left: var(--ml);
+  border-radius: var(--r);
+  padding: var(--w);
+  background:
+    /* rounded roll shading: straight runs, then the four corners */
+    linear-gradient(to bottom, var(--roll)) center top / var(--side) var(--w),
+    linear-gradient(to top, var(--roll)) center bottom / var(--side) var(--w),
+    linear-gradient(to right, var(--roll)) left center / var(--w) var(--side),
+    linear-gradient(to left, var(--roll)) right center / var(--w) var(--side),
+    radial-gradient(circle at 100% 100%, transparent var(--inner), var(--roll-c)) left top / var(--r) var(--r),
+    radial-gradient(circle at 0 100%, transparent var(--inner), var(--roll-c)) right top / var(--r) var(--r),
+    radial-gradient(circle at 100% 0, transparent var(--inner), var(--roll-c)) left bottom / var(--r) var(--r),
+    radial-gradient(circle at 0 0, transparent var(--inner), var(--roll-c)) right bottom / var(--r) var(--r),
+    /* thread loops, slanted a little like overlock stitches */
+    repeating-linear-gradient(76deg, var(--thread)) center top / var(--side) var(--w),
+    repeating-linear-gradient(76deg, var(--thread)) center bottom / var(--side) var(--w),
+    repeating-linear-gradient(166deg, var(--thread)) left center / var(--w) var(--side),
+    repeating-linear-gradient(166deg, var(--thread)) right center / var(--w) var(--side),
+    repeating-conic-gradient(from 0deg at 100% 100%, var(--thread-c)) left top / var(--r) var(--r),
+    repeating-conic-gradient(from 0deg at 0 100%, var(--thread-c)) right top / var(--r) var(--r),
+    repeating-conic-gradient(from 0deg at 100% 0, var(--thread-c)) left bottom / var(--r) var(--r),
+    repeating-conic-gradient(from 0deg at 0 0, var(--thread-c)) right bottom / var(--r) var(--r),
+    var(--bind);
+  background-repeat: no-repeat;
+  /* only the ring around the rim shows */
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
   transition: bottom .25s ease;
 }
-.mat-body::before { outline: 4px solid rgba(0,0,0,.14); outline-offset: -4px; }
-.mat.has-art .mat-body::after { border-color: rgba(255,255,255,.4); opacity: .5; }
+/* The binding sits a little proud of the cloth, so a soft shadow falls just inside it. */
+.mat-body::before { box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, inset 0 0 0 7px rgba(0,0,0,.25), inset 0 1px 4px 8px rgba(0,0,0,.2), 0 1px 1px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.35); }
+/* Printed mats usually get a plain dark binding. */
+.mat.has-art .mat-body::after { --bind: color-mix(in srgb, var(--seat, #4a7a68) 8%, #1f2126); --hi: rgba(255,255,255,.11); }
+@media (max-width: 600px) {
+  .mat-body::after { --w: 5px; }
+  .mat-body::before { box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, inset 0 0 0 5px rgba(0,0,0,.25), inset 0 1px 3px 6px rgba(0,0,0,.2), 0 1px 1px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.35); }
+}
 
 /* Carried card: eases up and bigger when picked up, and between sizes as it
    passes over the hand, the mat or a pile. Its position follows the finger directly. */
