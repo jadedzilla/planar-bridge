@@ -403,3 +403,14 @@ html, body { background: var(--table); }
 /* Life number centred on the die: the top face is a smaller hexagon around it */
 .spindown::after { inset: 18% 16%; clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%); }
 .spindown .val, .me-life .spindown .val, .edge-die .val { margin-top: 0 !important; text-align: center; line-height: 1; }
+
+/* --- Custom playmat pictures --- */
+.mat.has-art .mat-body::before {
+  background: linear-gradient(rgba(0,0,0,.18), rgba(0,0,0,.28)), var(--mat-img) center / cover no-repeat, var(--cloth);
+}
+.mat.has-art .pile .spot { background: rgba(0,0,0,.32); box-shadow: inset 0 0 0 1px rgba(255,255,255,.22); }
+.mat.has-art .pile-label { color: rgba(255,255,255,.75); text-shadow: 0 1px 2px rgba(0,0,0,.8); }
+.mat.has-art .battlefield::after { color: rgba(255,255,255,.6); text-shadow: 0 1px 3px rgba(0,0,0,.8); }
+.edge.has-art { background: linear-gradient(rgba(0,0,0,.35), rgba(0,0,0,.45)), var(--mat-img) center / cover no-repeat; text-shadow: 0 1px 2px rgba(0,0,0,.8); }
+.mat-preview { margin: 10px 0; aspect-ratio: 2 / 1; border-radius: 14px; display: grid; place-items: center; color: var(--muted); background: #262a31; box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, 0 6px 18px rgba(0,0,0,.35); }
+.mat-preview.has-art { background: var(--mat-img) center / cover no-repeat; }

@@ -48,6 +48,7 @@ function onMessage(msg) {
   if (msg.type === 'joined') {
     app.code = msg.code;
     app.playerId = msg.playerId;
+    app.matChecked = false;
     try { localStorage.setItem('ps:' + msg.code, msg.playerId); } catch {}
     history.replaceState(null, '', '/s/' + msg.code);
     $('#landing').hidden = true;
@@ -57,6 +58,7 @@ function onMessage(msg) {
     app.s = msg.state;
     render();
     if (app.pendingDeck) bringPendingDeck();
+    bringSavedPlaymat();
     if (app.library && sheetKind === 'library') send({ type: 'searchLibrary', quiet: true });
   } else if (msg.type === 'library') {
     app.library = msg.cards;
@@ -215,12 +217,14 @@ function setFocus(id) {
 function updateEdge(el, p, rel) {
   el.classList.toggle('empty', !p);
   if (!p) {
+    setMatArt(el, null);
     delete el.dataset.drop; delete el.dataset.player; delete el.dataset.zone;
     el.style.removeProperty('--seat');
     const open = app.s.players.length < 4;
     el.innerHTML = `<span class="edge-inner"><span class="muted">${rel === 2 && open ? `Invite: <b class="edge-code">${esc(app.code)}</b>` : 'Empty seat'}</span></span>`;
     return;
   }
+  setMatArt(el, p);
   el.dataset.drop = '1';
   el.dataset.zone = 'battlefield';
   el.dataset.player = p.id;
@@ -319,8 +323,17 @@ function sizeCards(mat) {
   mat.style.setProperty('--card-w', cw.toFixed(1) + 'px');
 }
 
+function matUrl(p) { return `/mat/${encodeURIComponent(app.code)}/${encodeURIComponent(p.id)}?v=${p.mat}`; }
+function setMatArt(el, p) {
+  const on = !!(p && p.mat);
+  el.classList.toggle('has-art', on);
+  if (on) el.style.setProperty('--mat-img', `url("${matUrl(p)}")`);
+  else el.style.removeProperty('--mat-img');
+}
+
 function updateMat(mat, p, used) {
   const isMe = p.id === app.s.you;
+  setMatArt(mat, p);
   mat.classList.toggle('me', isMe);
   mat.style.setProperty('--seat', p.color);
   $('.nm', mat).textContent = p.name;
@@ -1284,6 +1297,7 @@ function openMoreMenu() {
       <button class="btn primary" data-m="deck">Load deck</button>
       <button class="btn" data-m="fullscreen">${document.fullscreenElement || document.webkitFullscreenElement ? 'Exit full screen' : 'Full screen'}</button>
       <button class="btn" data-m="seating">Seating</button>
+      <button class="btn" data-m="playmat">Playmat</button>
       <button class="btn" data-m="log">Game log</button>
       <button class="btn" data-m="untap">Untap all</button>
       <button class="btn" data-m="shuffle">Shuffle library</button>
@@ -1309,6 +1323,7 @@ function openMoreMenu() {
       const extra = $('#moreExtra');
       if (a === 'deck') return openDeckSheet();
       if (a === 'seating') return openSeatingSheet();
+      if (a === 'playmat') return openPlaymatSheet();
       if (a === 'log') { closeSheet(); $('#logPanel').hidden = false; return renderLog(); }
       if (a === 'fullscreen') { toggleFullscreen(); return closeSheet(); }
       if (a === 'untap') { send({ type: 'untapAll' }); closeSheet(); }
@@ -1393,6 +1408,69 @@ $('#handTab').addEventListener('click', () => {
 document.querySelectorAll('[data-mylife]').forEach((b) => {
   b.addEventListener('click', () => send({ type: 'life', playerId: app.s.you, delta: Number(b.dataset.mylife) }));
 });
+
+// ---------- Custom playmat ----------
+// The picture is shrunk to a JPEG on this device, kept here for next time,
+// and shared with the table so everyone sees it on your mat and edge band.
+const MAT_KEY = 'ps:playmat';
+function savedPlaymat() { try { return localStorage.getItem(MAT_KEY) || ''; } catch { return ''; } }
+function storePlaymat(data) {
+  try { if (data) localStorage.setItem(MAT_KEY, data); else localStorage.removeItem(MAT_KEY); return true; } catch { return false; }
+}
+function bringSavedPlaymat() {
+  const m = me();
+  if (!m || app.matChecked) return;
+  app.matChecked = true;
+  const data = savedPlaymat();
+  if (data && !m.mat) send({ type: 'playmat', data });
+}
+async function shrinkImage(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((ok, fail) => { const i = new Image(); i.onload = () => ok(i); i.onerror = fail; i.src = url; });
+    let side = 1600;
+    for (let tries = 0; tries < 8; tries++) {
+      const k = Math.min(1, side / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(img.naturalWidth * k));
+      c.height = Math.max(1, Math.round(img.naturalHeight * k));
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      for (const q of [0.82, 0.7, 0.6]) {
+        const data = c.toDataURL('image/jpeg', q);
+        if (data.length < 300 * 1024) return data; // about 220 KB once decoded
+      }
+      side = Math.round(side * 0.8);
+    }
+    throw new Error('too big');
+  } finally { URL.revokeObjectURL(url); }
+}
+function openPlaymatSheet() {
+  const m = me();
+  openSheet('playmat', `
+    <button class="btn small sheet-close" data-close>Close</button>
+    <h3>Your playmat</h3>
+    <p class="note">Use any picture as your playmat. It's saved on this device for next time, and everyone at the table sees it on your mat.</p>
+    <div class="mat-preview${m.mat ? ' has-art' : ''}" style="${m.mat ? `--mat-img:url('${matUrl(m)}')` : ''}"><span>${m.mat ? '' : 'Plain mat'}</span></div>
+    <div class="row">
+      <label class="btn primary">Choose a picture<input type="file" accept="image/*" id="matFile" hidden></label>
+      ${m.mat ? '<button class="btn" id="matClear">Use the plain mat</button>' : ''}
+    </div>
+    <p class="note" id="matMsg">A wide picture works best (playmats are about 2:1). It's cropped to fill the mat.</p>`);
+  $('#matFile').onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    $('#matMsg').textContent = 'Preparing your picture…';
+    try {
+      const data = await shrinkImage(file);
+      send({ type: 'playmat', data });
+      const kept = storePlaymat(data);
+      closeSheet();
+      toast(kept ? 'Playmat set' : 'Playmat set for this session (this device is out of space to keep it)');
+    } catch { $('#matMsg').textContent = "That picture couldn't be used. Try a JPEG or PNG."; }
+  };
+  const clear = $('#matClear');
+  if (clear) clear.onclick = () => { send({ type: 'playmat', data: null }); storePlaymat(''); closeSheet(); };
+}
 
 // ---------- Seating ----------
 function openSeatingSheet() {
