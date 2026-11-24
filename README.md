@@ -17,7 +17,9 @@ Everyone must be able to reach the same server, so for play over the internet it
 ## What it does
 
 - Sessions of up to 4 players, joined by link (`/s/CODE`) or code. Reloading the page puts you back in your seat.
-- Each player has a playmat: battlefield, library, graveyard, exile, plus a private hand bar.
+- Built for one tablet per player: your own playmat fills the screen, with your hand along the bottom.
+- Opponents show as tiles across the top with their life, card counts and a mini view of their battlefield. Drop a card on a tile to give it to that player, or tap the tile to open their full playmat above yours.
+- Each playmat has a battlefield, library, graveyard and exile, plus a private hand.
 - Drag any card to any zone on any player's playmat (mouse or touch). Tap or long-press a card for a menu with every move.
 - Click/tap a battlefield card to tap/untap it. Transform double-faced cards, turn cards face down, add counters.
 - Library: tap to draw, drag to move the top card, search (only you see it), shuffle, mill.

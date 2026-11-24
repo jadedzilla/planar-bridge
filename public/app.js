@@ -15,6 +15,7 @@ const app = {
   library: null, // my library contents while searching it
   cardEls: new Map(),
   matEls: new Map(),
+  focus: null, // opponent whose full playmat is open
 };
 
 // ---------- Connection ----------
@@ -134,23 +135,42 @@ function banner(text) {
 }
 
 // ---------- Rendering ----------
+// Layout (one tablet per player): opponents as compact tiles along the top,
+// an optional "focused" opponent playmat in the middle, and your own playmat
+// filling the rest of the screen above your hand.
 function render() {
   const s = app.s;
   const mine = me();
   if (!s || !mine) return;
-  const table = $('#table');
-  const order = [mine, ...s.players.filter((p) => p !== mine).sort((a, b) => a.seat - b.seat)];
-  table.dataset.count = order.length;
   const used = new Set();
+  const opps = s.players.filter((p) => p !== mine).sort((a, b) => a.seat - b.seat);
+  if (app.focus && !opps.some((p) => p.id === app.focus)) app.focus = null;
 
-  order.forEach((p) => {
-    let mat = app.matEls.get(p.id);
-    if (!mat) { mat = createMat(p); app.matEls.set(p.id, mat); }
-    table.appendChild(mat); // keeps order
-    updateMat(mat, p, used);
-  });
+  // Opponent tiles, plus an invite tile while seats are free
+  const strip = $('#oppStrip');
+  const tiles = opps.map((p) => updateTile(tileFor(p), p));
+  if (s.players.length < 4) tiles.push(inviteTile());
+  syncChildren(strip, tiles);
+  strip.dataset.count = tiles.length;
+
+  // Focused opponent playmat
+  const focusP = app.focus && playerById(app.focus);
+  const focus = $('#focusArea');
+  focus.hidden = !focusP;
+  $('#table').classList.toggle('has-focus', !!focusP);
+  if (focusP) {
+    const mat = matFor(focusP);
+    syncChildren(focus, [mat]);
+    updateMat(mat, focusP, used);
+  } else syncChildren(focus, []);
+
+  // My playmat
+  const myMat = matFor(mine);
+  syncChildren($('#myArea'), [myMat]);
+  updateMat(myMat, mine, used);
+
   for (const [id, mat] of app.matEls) {
-    if (!order.includes(playerById(id))) { mat.remove(); app.matEls.delete(id); }
+    if (!playerById(id)) { mat.remove(); app.matEls.delete(id); }
   }
 
   // My hand
@@ -165,6 +185,86 @@ function render() {
 
   renderLog();
   if (sheetKind === 'pile') renderPileSheet();
+}
+
+function matFor(p) {
+  let mat = app.matEls.get(p.id);
+  if (!mat) { mat = createMat(p); app.matEls.set(p.id, mat); }
+  return mat;
+}
+
+function setFocus(id) {
+  app.focus = app.focus === id ? null : id;
+  render();
+}
+
+// ---------- Opponent tiles ----------
+const tileEls = new Map();
+function tileFor(p) {
+  let t = tileEls.get(p.id);
+  if (t) return t;
+  t = document.createElement('section');
+  t.className = 'opp-tile';
+  t.dataset.player = p.id;
+  t.innerHTML = `
+    <div class="opp-head">
+      <span class="dot"></span><span class="nm"></span><span class="offline"></span>
+      <div class="life small">
+        <button data-life="-1" aria-label="Lose 1 life">−</button>
+        <span class="val"></span>
+        <button data-life="1" aria-label="Gain 1 life">+</button>
+      </div>
+    </div>
+    <div class="mini-bf" data-drop="1" data-zone="battlefield" data-player="${p.id}"></div>
+    <div class="opp-zones">
+      <span class="zchip" data-drop="1" data-zone="hand" data-player="${p.id}"><span class="lg">Hand</span><span class="sh">Hand</span> <b data-n="hand"></b></span>
+      <span class="zchip" data-drop="1" data-zone="library" data-player="${p.id}"><span class="lg">Library</span><span class="sh">Lib</span> <b data-n="library"></b></span>
+      <span class="zchip" data-drop="1" data-zone="graveyard" data-player="${p.id}" data-open="graveyard"><span class="lg">Graveyard</span><span class="sh">GY</span> <b data-n="graveyard"></b></span>
+      <span class="zchip" data-drop="1" data-zone="exile" data-player="${p.id}" data-open="exile"><span class="lg">Exile</span><span class="sh">Exile</span> <b data-n="exile"></b></span>
+    </div>`;
+  t.querySelectorAll('[data-life]').forEach((b) => {
+    b.onclick = (e) => { e.stopPropagation(); send({ type: 'life', playerId: p.id, delta: Number(b.dataset.life) }); };
+  });
+  t.addEventListener('click', (e) => {
+    if (drag || e.target.closest('button')) return;
+    const chip = e.target.closest('[data-open]');
+    if (chip) return openPileSheet(p.id, chip.dataset.open);
+    setFocus(p.id);
+  });
+  tileEls.set(p.id, t);
+  return t;
+}
+
+function updateTile(t, p) {
+  t.style.setProperty('--seat', p.color);
+  t.classList.toggle('focused', app.focus === p.id);
+  $('.nm', t).textContent = p.name;
+  $('.offline', t).textContent = p.connected ? '' : 'offline';
+  const lv = $('.val', t);
+  lv.textContent = p.life;
+  lv.classList.toggle('low', p.life <= 5);
+  for (const z of ['hand', 'library', 'graveyard', 'exile']) $(`[data-n="${z}"]`, t).textContent = p.counts[z];
+  // Miniature battlefield: small, non-interactive copies of the cards
+  const mini = $('.mini-bf', t);
+  mini.dataset.empty = p.zones.battlefield.length ? '' : 'Drop cards here';
+  mini.innerHTML = p.zones.battlefield.map((c) => {
+    const hidden = !c.name || c.faceDown;
+    const src = c.transformed && c.back ? c.back : c.img;
+    return `<div class="mini-card${hidden ? ' back' : ''}${c.tapped ? ' tapped' : ''}" style="left:${(c.x * 100).toFixed(1)}%;top:${(c.y * 100).toFixed(1)}%">${!hidden && src ? `<img src="${esc(src)}" alt="">` : ''}</div>`;
+  }).join('');
+  return t;
+}
+
+let inviteEl = null;
+function inviteTile() {
+  if (!inviteEl) {
+    inviteEl = document.createElement('section');
+    inviteEl.className = 'opp-tile invite';
+    inviteEl.innerHTML = `<div class="invite-inner"><span class="muted">Waiting for players</span><b class="invite-code"></b><span class="muted small-note">Enter this code on another tablet, or tap to share the link</span></div>`;
+    inviteEl.onclick = () => $('#inviteBtn').click();
+  }
+  $('.invite-code', inviteEl).textContent = app.code;
+  return inviteEl;
 }
 
 function syncChildren(parent, els) {
@@ -185,6 +285,7 @@ function createMat(p) {
         <span class="val"></span>
         <button data-life="1" aria-label="Gain 1 life">+</button>
       </div>
+      <button class="btn small mat-close" aria-label="Close this playmat">Close</button>
     </div>
     <div class="mat-body">
       <div class="battlefield" data-drop="1" data-zone="battlefield" data-player="${p.id}"></div>
@@ -197,6 +298,7 @@ function createMat(p) {
   mat.querySelectorAll('[data-life]').forEach((b) => {
     b.onclick = () => send({ type: 'life', playerId: p.id, delta: Number(b.dataset.life) });
   });
+  $('.mat-close', mat).onclick = () => setFocus(p.id);
   return mat;
 }
 
@@ -212,6 +314,7 @@ function updateMat(mat, p, used) {
   lv.classList.toggle('low', p.life <= 5);
   $('.hand-badge', mat).textContent = `Hand ${p.counts.hand}`;
   $('.hand-badge', mat).hidden = isMe;
+  $('.mat-close', mat).hidden = isMe;
 
   const bf = $('.battlefield', mat);
   bf.dataset.empty = p.zones.battlefield.length ? '' : (isMe ? 'Your battlefield. Drag cards here.' : `${p.name}'s battlefield`);
@@ -430,8 +533,9 @@ function finishDrag(d, x, y) {
   const msg = { type: 'move', cardId: d.id, toPlayer, toZone };
   if (toZone === 'battlefield') {
     const r = target.getBoundingClientRect();
-    msg.x = Math.max(0, Math.min(0.94, (x - d.offX - r.left) / r.width));
-    msg.y = Math.max(0, Math.min(0.9, (y - d.offY - r.top) / r.height));
+    const mini = target.classList.contains('mini-bf');
+    msg.x = Math.max(0, Math.min(0.94, (x - (mini ? 0 : d.offX) - r.left) / r.width));
+    msg.y = Math.max(0, Math.min(0.9, (y - (mini ? 0 : d.offY) - r.top) / r.height));
     // Move it locally right away so it doesn't snap back while the server answers.
     const local = findCard(d.id);
     if (local && local.zone === 'battlefield' && local.player.id === toPlayer) {
@@ -485,7 +589,7 @@ function onPileClick(pile) {
 function hoverPreview(e) {
   const c = e.target.closest && e.target.closest('.card[data-card-id]');
   const img = c && !c.classList.contains('back') && c.querySelector('img').getAttribute('src');
-  if (!img || !matchMedia('(hover: hover) and (min-width: 761px)').matches) return hidePreview();
+  if (!img || !matchMedia('(hover: hover) and (min-width: 601px)').matches) return hidePreview();
   const p = $('#preview');
   const pi = p.querySelector('img');
   if (pi.getAttribute('src') !== img) pi.src = img;
@@ -831,7 +935,8 @@ function openMoreMenu() {
     <div id="moreExtra"></div>
     <h3 style="margin-top:14px">How to play here</h3>
     <ul class="note">
-      <li>Drag any card to any zone on any playmat. On phones you can also tap or long-press a card for a menu with every move.</li>
+      <li>Drag any card to any zone on any playmat. Drop onto an opponent's tile to give them the card. You can also tap or long-press a card for a menu with every move.</li>
+      <li>Tap an opponent's tile to open their full playmat above yours. Tap it again (or Close) to put it away.</li>
       <li>Click or tap a card on the battlefield to tap / untap it. Right-click or long-press for more.</li>
       <li>Tap your library to draw. Drag it to move the top card somewhere.</li>
       <li>Anyone can change anyone's life total with − and +.</li>
@@ -860,3 +965,33 @@ function openMoreMenu() {
 }
 
 boot();
+
+// ---------- Reliable taps on touch screens ----------
+// Some tablets drop the "click" that should follow a tap, especially right
+// after a drag. For touch input we fire the click ourselves on pointerup and
+// swallow the browser's own click if it arrives too.
+(() => {
+  const TAPPABLE = 'button, .opp-tile, .pile:not(.mine), .zchip, .chip';
+  let down = null;
+  let synth = false;
+  let swallowUntil = 0;
+  document.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse') return;
+    const el = e.target.closest(TAPPABLE);
+    if (!el || e.target.closest('.card[data-card-id]')) return (down = null);
+    down = { el, target: e.target, x: e.clientX, y: e.clientY, id: e.pointerId };
+  }, true);
+  document.addEventListener('pointerup', (e) => {
+    const d = down;
+    down = null;
+    if (!d || e.pointerId !== d.id || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 12) return;
+    if (!d.el.isConnected || d.el.disabled) return;
+    swallowUntil = Date.now() + 700;
+    synth = true;
+    try { d.target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window })); } finally { synth = false; }
+  }, true);
+  document.addEventListener('pointercancel', () => { down = null; }, true);
+  document.addEventListener('click', (e) => {
+    if (!synth && Date.now() < swallowUntil) { e.stopImmediatePropagation(); e.preventDefault(); }
+  }, true);
+})();
