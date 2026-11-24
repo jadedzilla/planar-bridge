@@ -580,8 +580,8 @@ html, body { background: var(--table); }
   --thread-c: var(--hi) 0deg, rgba(255,255,255,0) 2.9deg, var(--lo) 4.2deg, rgba(0,0,0,0) 7.5deg; /* 12 loops per corner */
   --roll: rgba(0,0,0,.34), rgba(255,255,255,.07) 38%, rgba(255,255,255,0) 62%, rgba(0,0,0,.3);
   --inner: calc(var(--r) - var(--w));
-  --mid: calc(var(--r) - var(--w) * .62);
-  --roll-c: rgba(0,0,0,.3) var(--inner), rgba(255,255,255,0) calc(var(--inner) + var(--w) * .38), rgba(255,255,255,.07) var(--mid), rgba(0,0,0,.34) var(--r);
+  --mid: calc(var(--r) - var(--w) * .38);
+  --roll-c: rgba(0,0,0,.3) var(--inner), rgba(255,255,255,0) calc(var(--inner) + var(--w) * .38), rgba(255,255,255,.07) var(--mid), rgba(0,0,0,.34) var(--r); /* same stops as --roll, measured from the inner edge */
   --side: calc(100% - var(--r) * 2);
   content: ""; position: absolute; pointer-events: none; z-index: 0;
   top: var(--mt); right: var(--mr); bottom: var(--mb); left: var(--ml);
