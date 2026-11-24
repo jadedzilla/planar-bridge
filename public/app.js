@@ -978,40 +978,75 @@ function deleteDeck(id) {
   if (pickedDeckId() === id) setPickedDeck('');
 }
 
+// Home screen deck picker: a shelf of card stacks you scroll sideways.
+// Each deck is a sleeved stack whose height follows its size, with its
+// commander (or first spell) face up on top. The picked deck is lifted.
+const SLEEVES = ['#4f7fd0', '#c0504d', '#4f9a6c', '#8a6cc2', '#d08a3a', '#3f9aa6', '#b5577f'];
+const BASICS = new Set(['plains', 'island', 'swamp', 'mountain', 'forest', 'wastes']);
+function sleeveOf(d) {
+  let h = 0;
+  for (const ch of d.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return SLEEVES[h % SLEEVES.length];
+}
+function faceCardOf(d) {
+  return d.cards.find((c) => c.commander && c.img)
+    || d.cards.find((c) => c.img && !BASICS.has(norm(c.name).replace(/^snow-covered /, '')))
+    || d.cards.find((c) => c.img) || null;
+}
+
 function renderLandingDecks() {
-  const list = $('#deckList');
+  const shelf = $('#deckList');
+  const scroll = shelf.scrollLeft;
   const decks = loadDecks();
   let pick = pickedDeckId();
   if (pick && !decks.some((d) => d.id === pick)) pick = '';
-  const row = (d) => `
-    <label class="deck-row">
-      <input type="radio" name="deckPick" value="${esc(d.id)}" ${pick === d.id ? 'checked' : ''}>
-      <span class="deck-name">${esc(d.name)}</span>
-      <span class="deck-count">${deckSize(d)} cards</span>
-      <button class="btn small" data-deck-edit="${esc(d.id)}">Edit</button>
-      <button class="btn small danger" data-deck-del="${esc(d.id)}">Delete</button>
+  const tile = (d) => {
+    const face = faceCardOf(d);
+    const on = pick === d.id;
+    return `
+    <label class="deck-tile${on ? ' picked' : ''}">
+      <input class="sr-only" type="radio" name="deckPick" value="${esc(d.id)}" ${on ? 'checked' : ''}>
+      <span class="deck-stack" data-size="${deckSize(d)}" style="--sleeve:${sleeveOf(d)}">
+        <span class="deck-top${face ? '' : ' back'}">${face ? `<img src="${esc(face.img)}" alt="" loading="lazy" draggable="false">` : ''}</span>
+        <span class="deck-qty">${deckSize(d)}</span>
+      </span>
+      <span class="deck-label">${esc(d.name)}</span>
+      ${on ? `<span class="deck-actions">
+        <button type="button" class="link-btn" data-deck-edit="${esc(d.id)}">Edit</button>
+        <button type="button" class="link-btn danger" data-deck-del="${esc(d.id)}">Delete</button>
+      </span>` : ''}
     </label>`;
-  list.innerHTML = decks.length
-    ? decks.map(row).join('') + `
-      <label class="deck-row">
-        <input type="radio" name="deckPick" value="" ${pick ? '' : 'checked'}>
-        <span class="deck-name muted">No deck, I'll load one at the table</span>
-      </label>`
-    : '<p class="note">No saved decks yet. Import one now so it is ready when you sit down.</p>';
+  };
+  shelf.innerHTML = decks.map(tile).join('') + (decks.length ? `
+    <label class="deck-tile none${pick ? '' : ' picked'}">
+      <input class="sr-only" type="radio" name="deckPick" value="" ${pick ? '' : 'checked'}>
+      <span class="deck-spot">No deck</span>
+      <span class="deck-label">Pick one at the table</span>
+    </label>` : '') + `
+    <button type="button" class="deck-tile add" data-deck-add>
+      <span class="deck-spot"><span class="plus">+</span></span>
+      <span class="deck-label">Import a deck</span>
+    </button>`;
+  shelf.querySelectorAll('.deck-stack').forEach((el) => setStack(el, Number(el.dataset.size)));
+  shelf.scrollLeft = scroll;
 }
-$('#deckList').addEventListener('change', (e) => { if (e.target.name === 'deckPick') setPickedDeck(e.target.value); });
+$('#deckList').addEventListener('change', (e) => {
+  if (e.target.name !== 'deckPick') return;
+  setPickedDeck(e.target.value);
+  renderLandingDecks();
+});
 $('#deckList').addEventListener('click', (e) => {
+  if (e.target.closest('[data-deck-add]')) return openDeckSheet({ mode: 'landing' });
   const edit = e.target.closest('[data-deck-edit]');
   const del = e.target.closest('[data-deck-del]');
   if (!edit && !del) return;
-  e.preventDefault(); // don't also pick the row
+  e.preventDefault(); // don't also pick the tile
   if (edit) return openDeckSheet({ mode: 'landing', editId: edit.dataset.deckEdit });
   if (del.dataset.armed) { deleteDeck(del.dataset.deckDel); return renderLandingDecks(); }
   del.dataset.armed = '1';
-  del.textContent = 'Tap again to delete';
+  del.textContent = 'Sure?';
   setTimeout(() => { if (del.isConnected) { delete del.dataset.armed; del.textContent = 'Delete'; } }, 3000);
 });
-$('#addDeckBtn').onclick = () => openDeckSheet({ mode: 'landing' });
 
 // Right after sitting down: shuffle in the deck picked on the landing page,
 // unless this seat already has cards (rejoining a game in progress).
