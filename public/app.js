@@ -1029,7 +1029,18 @@ function renderLandingDecks() {
     </button>`;
   shelf.querySelectorAll('.deck-stack').forEach((el) => setStack(el, Number(el.dataset.size)));
   shelf.scrollLeft = scroll;
+  const picked = decks.find((d) => d.id === pick);
+  $('#deckTabPick').textContent = picked ? '· ' + picked.name : decks.length ? '· none picked' : '';
 }
+
+// The drawer remembers whether you left it open or tucked away.
+function setDeckDrawer(open) {
+  $('#landing').classList.toggle('decks-hidden', !open);
+  $('#deckTab').setAttribute('aria-expanded', String(open));
+  try { localStorage.setItem('ps:decksOpen', open ? '1' : '0'); } catch {}
+}
+$('#deckTab').onclick = () => setDeckDrawer($('#landing').classList.contains('decks-hidden'));
+try { if (localStorage.getItem('ps:decksOpen') === '0') setDeckDrawer(false); } catch {}
 $('#deckList').addEventListener('change', (e) => {
   if (e.target.name !== 'deckPick') return;
   setPickedDeck(e.target.value);

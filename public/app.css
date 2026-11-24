@@ -41,8 +41,6 @@ button { font: inherit; color: inherit; }
 .field { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 13px; }
 .field input, .field select, textarea { font: inherit; font-size: 16px; color: var(--text); background: #11141a; border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; }
 #codeInput { text-transform: uppercase; letter-spacing: 3px; }
-.decks-box { margin-top: 14px; gap: 8px; }
-.decks-box .btn { margin-top: 0; }
 .decks-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
 .decks-head h2 { margin: 0; }
 .note { font-size: 12px; color: var(--muted); margin: 0; }
@@ -406,7 +404,6 @@ html, body { background: var(--table); }
 
 /* --- Home screen deck picker: a shelf of sleeved card stacks --- */
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.decks-box { padding-bottom: 6px; }
 .deck-shelf {
   --tile-w: 104px;
   display: flex; gap: 18px; align-items: flex-start;
@@ -479,4 +476,35 @@ html, body { background: var(--table); }
 }
 /* keep the sideways-scrolling shelf from widening the home screen */
 .landing { grid-template-columns: minmax(0, 1fr); }
-.landing-card, .decks-box, .deck-shelf { min-width: 0; }
+.landing-card, .deck-drawer-body, .deck-shelf { min-width: 0; }
+
+/* --- Decks drawer: docked to the bottom edge of the home screen --- */
+.landing { --drawer-h: 300px; padding-bottom: calc(var(--drawer-h) + 24px); transition: padding-bottom .3s ease; }
+.landing.decks-hidden { padding-bottom: 56px; }
+.deck-drawer {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+  transition: transform .3s cubic-bezier(.3,1.1,.55,1);
+}
+.landing.decks-hidden .deck-drawer { transform: translateY(100%); }
+.deck-drawer-body {
+  height: var(--drawer-h);
+  padding: 12px max(16px, calc((100% - 900px) / 2)) max(10px, env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: 2px;
+  background: linear-gradient(#262a31, #22262c);
+  border-radius: 18px 18px 0 0;
+  box-shadow: 0 1px 0 rgba(255,255,255,.07) inset, 0 -2px 6px rgba(0,0,0,.25), 0 -12px 30px rgba(0,0,0,.35);
+}
+.deck-drawer .deck-shelf { margin: -8px calc(-1 * max(16px, calc((100vw - 900px) / 2))) 0; padding-left: max(16px, calc((100vw - 900px) / 2)); padding-right: max(16px, calc((100vw - 900px) / 2)); scroll-padding: 0 max(16px, calc((100vw - 900px) / 2)); }
+.deck-tab {
+  position: absolute; left: 50%; top: 0; transform: translate(-50%, -100%);
+  display: flex; align-items: center; gap: 6px; max-width: calc(100vw - 32px);
+  height: 34px; padding: 0 16px; border: none; border-radius: 12px 12px 0 0;
+  background: #262a31; color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer;
+  box-shadow: 0 1px 0 rgba(255,255,255,.07) inset, 0 -4px 10px rgba(0,0,0,.25);
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.deck-tab-pick { font-weight: 400; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.deck-tab .caret { display: inline-block; transition: transform .3s; }
+.landing.decks-hidden .deck-tab .caret { transform: rotate(180deg); }
+@media (max-width: 600px) { .landing { --drawer-h: 268px; } }
+@media (prefers-reduced-motion: reduce) { .deck-drawer, .landing { transition: none; } }

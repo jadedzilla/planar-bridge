@@ -24,13 +24,6 @@
       <label class="field">Your name
         <input id="nameInput" maxlength="24" autocomplete="nickname" placeholder="e.g. Emma">
       </label>
-      <div class="landing-box decks-box">
-        <div class="decks-head">
-          <h2>Your decks</h2>
-          <p class="note">Saved on this device. Tap the deck you want to bring.</p>
-        </div>
-        <div id="deckList" class="deck-shelf" role="radiogroup" aria-label="Deck to bring"></div>
-      </div>
       <div class="landing-split">
         <div class="landing-box">
           <h2>New session</h2>
@@ -53,6 +46,19 @@
       </div>
       <p id="landingError" class="error" role="alert"></p>
     </div>
+    <!-- Your decks: a drawer docked to the bottom edge, pulled up by its tab -->
+    <aside id="deckDrawer" class="deck-drawer">
+      <button id="deckTab" class="deck-tab" aria-expanded="true" aria-controls="deckDrawerBody">
+        Decks <span id="deckTabPick" class="deck-tab-pick"></span> <span class="caret">▾</span>
+      </button>
+      <div id="deckDrawerBody" class="deck-drawer-body">
+        <div class="decks-head">
+          <h2>Your decks</h2>
+          <p class="note">Saved on this device. Tap the deck you want to bring.</p>
+        </div>
+        <div id="deckList" class="deck-shelf" role="radiogroup" aria-label="Deck to bring"></div>
+      </div>
+    </aside>
   </section>
 
   <!-- Table: your playmat fills the screen; other players are bands on the edges -->
