@@ -195,7 +195,7 @@ function viewFor(room, viewerId) {
     if (c.loc.zone === 'battlefield') Object.assign(base, { x: c.x, y: c.y, tapped: c.tapped, faceDown: c.faceDown, counters: c.counters });
     // Lets the receiving tablet animate a card sliding in from the sender's side.
     if (c.sentFrom && Date.now() - c.sentAt < 4000) Object.assign(base, { from: c.sentFrom, sentAt: c.sentAt });
-    if (visible(c)) Object.assign(base, { name: c.name, img: c.img, back: c.back, transformed: c.transformed });
+    if (visible(c)) Object.assign(base, { name: c.name, img: c.img, back: c.back, transformed: c.transformed, finish: c.finish || undefined });
     return base;
   };
   return {
@@ -277,6 +277,7 @@ function handle(ws, msg) {
           name: cleanStr(c.name, 120),
           img: cleanImg(c.img),
           back: cleanImg(c.back),
+          finish: c.finish === 'foil' || c.finish === 'etched' ? c.finish : '',
           loc: { player: me.id, zone: 'library' },
           tapped: false, faceDown: false, transformed: false, counters: 0, x: 0, y: 0,
         };
@@ -353,7 +354,7 @@ function handle(ws, msg) {
       // Only the searching player gets the card list.
       send(ws, { type: 'library', cards: me.zones.library.map((id) => {
         const c = room.cards.get(id);
-        return { id: c.id, owner: c.owner, name: c.name, img: c.img, back: c.back };
+        return { id: c.id, owner: c.owner, name: c.name, img: c.img, back: c.back, finish: c.finish || undefined };
       }) });
       if (!msg.quiet) addLog(room, `${me.name} is looking through their library.`);
       break;

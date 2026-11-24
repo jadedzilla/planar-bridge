@@ -478,10 +478,49 @@ function glideCards(before, mine) {
 function makeCardEl() {
   const el = document.createElement('div');
   el.className = 'card';
-  el.innerHTML = '<span class="cname"></span><img alt="" draggable="false" loading="lazy">';
+  el.innerHTML = '<span class="cname"></span><img alt="" draggable="false" loading="lazy"><span class="foil"></span>';
   // If an image fails, fall back to showing the card name.
   el.querySelector('img').onerror = function () { this.style.visibility = 'hidden'; };
   return el;
+}
+
+// ---------- Foil ----------
+// Foil cards catch the light as the viewing angle changes. On a tablet the
+// angle comes from tilting the device; on a computer, from the pointer.
+// --tilt-x / --tilt-y run from -1 to 1 and feed the sheen in app.css.
+let tiltOn = false;
+function watchTilt() {
+  if (tiltOn) return;
+  tiltOn = true;
+  const root = document.documentElement.style;
+  let tx = 0, ty = 0, gx = 0, gy = 0, base = null, frame = 0, fromDevice = false;
+  const apply = () => {
+    frame = 0;
+    gx += (tx - gx) * 0.35; gy += (ty - gy) * 0.35; // ease, like a card catching light
+    root.setProperty('--tilt-x', gx.toFixed(3));
+    root.setProperty('--tilt-y', gy.toFixed(3));
+    if (Math.abs(tx - gx) > 0.002 || Math.abs(ty - gy) > 0.002) frame = requestAnimationFrame(apply);
+  };
+  const kick = () => { if (!frame) frame = requestAnimationFrame(apply); };
+  const clamp = (v) => Math.max(-1, Math.min(1, v));
+  addEventListener('deviceorientation', (e) => {
+    if (e.beta == null || e.gamma == null) return;
+    fromDevice = true;
+    // Relative to how the tablet was held when the game started, re-centred slowly.
+    if (!base) base = { b: e.beta, g: e.gamma };
+    base.b += (e.beta - base.b) * 0.004; base.g += (e.gamma - base.g) * 0.004;
+    tx = clamp((e.gamma - base.g) / 25); ty = clamp((e.beta - base.b) / 25);
+    kick();
+  });
+  addEventListener('pointermove', (e) => {
+    if (fromDevice || e.pointerType === 'touch') return;
+    tx = clamp((e.clientX / innerWidth - 0.5) * 1.4); ty = clamp((e.clientY / innerHeight - 0.5) * 1.4);
+    kick();
+  }, { passive: true });
+  // iPad and iPhone only share motion after a tap asks for it.
+  if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function') {
+    addEventListener('pointerup', () => { DeviceOrientationEvent.requestPermission().catch(() => {}); }, { once: true });
+  }
 }
 
 // Fill a card element from the card's view data.
@@ -502,6 +541,8 @@ function paintCard(el, c, zone, holder) {
     if (!src) img.removeAttribute('src');
     img.style.visibility = src ? '' : 'hidden';
     el.querySelector('.cname').textContent = hidden ? '' : c.name || '';
+    el.dataset.finish = !hidden && c.finish ? c.finish : '';
+    if (c.finish) watchTilt();
     el.title = hidden ? 'Hidden card' : c.name;
   };
   // Turning a card over (transforming a double-faced card, or face down / up)
@@ -543,6 +584,9 @@ function paintCard(el, c, zone, holder) {
   if (zone === 'battlefield') {
     el.style.left = (c.x * 100).toFixed(2) + '%';
     el.style.top = (c.y * 100).toFixed(2) + '%';
+    // Where the card lies changes the angle light hits it, so the foil sheen shifts as it moves.
+    el.style.setProperty('--fx', c.x.toFixed(3));
+    el.style.setProperty('--fy', c.y.toFixed(3));
   } else {
     el.style.left = el.style.top = '';
   }
@@ -631,6 +675,8 @@ document.addEventListener('pointermove', (e) => {
   e.preventDefault();
   drag.ghost.style.left = e.clientX - drag.ox + 'px';
   drag.ghost.style.top = e.clientY - drag.oy + 'px';
+  drag.ghost.style.setProperty('--fx', (e.clientX / innerWidth).toFixed(3));
+  drag.ghost.style.setProperty('--fy', (e.clientY / innerHeight).toFixed(3));
   const t = dropTargetAt(e.clientX, e.clientY);
   highlight(t);
   sizeGhostFor(drag, t);
@@ -1109,16 +1155,16 @@ function packCards(cards) {
   const out = [];
   const byKey = new Map();
   for (const c of cards) {
-    const key = [c.name, c.img, c.back, c.commander ? 1 : 0].join('|');
+    const key = [c.name, c.img, c.back, c.commander ? 1 : 0, c.finish || ''].join('|');
     const hit = byKey.get(key);
     if (hit) hit.qty++;
-    else { const e = { name: c.name, img: c.img, back: c.back, commander: !!c.commander, qty: 1 }; byKey.set(key, e); out.push(e); }
+    else { const e = { name: c.name, img: c.img, back: c.back, commander: !!c.commander, qty: 1 }; if (c.finish) e.finish = c.finish; byKey.set(key, e); out.push(e); }
   }
   return out;
 }
 function unpackCards(packed) {
   const out = [];
-  for (const c of packed) for (let k = 0; k < (c.qty || 1); k++) out.push({ name: c.name, img: c.img, back: c.back, commander: c.commander });
+  for (const c of packed) for (let k = 0; k < (c.qty || 1); k++) out.push({ name: c.name, img: c.img, back: c.back, commander: c.commander, finish: c.finish });
   return out;
 }
 
@@ -1404,13 +1450,26 @@ function parseDeck(text) {
     let qty = 1, rest = line;
     if (m) { qty = Math.min(99, parseInt(m[1], 10)); rest = m[2]; }
     let commander = section === 'commander';
-    if (/\*CMDR\*/i.test(rest)) { commander = true; rest = rest.replace(/\*CMDR\*/ig, ''); }
-    rest = rest.replace(/\s+\*[A-Z]\*\s*$/, '').replace(/\s+#.*$/, '').replace(/\s+\[[^\]]*\]\s*$/, '');
+    // Tags deckbuilders add after the name: *CMDR*, and the finish as *F* (foil)
+    // or *E* (etched), or written out like (Foil) / [Etched Foil].
+    let finish = '';
+    rest = rest.replace(/\s*\*([A-Za-z]+)\*/g, (_, tag) => {
+      const t = tag.toUpperCase();
+      if (t === 'CMDR') commander = true;
+      else if (t === 'F' || t === 'FOIL') finish = finish || 'foil';
+      else if (t === 'E' || t === 'ETCHED') finish = 'etched';
+      return '';
+    });
+    rest = rest.replace(/\s*[\[(]\s*(foil[\s-]*etched|etched(?:[\s-]*foil)?|foil)\s*[\])]/ig, (_, f) => {
+      finish = /etched/i.test(f) ? 'etched' : finish || 'foil';
+      return '';
+    });
+    rest = rest.replace(/\s+#.*$/, '').replace(/\s+\[[^\]]*\]\s*$/, '');
     let set = null, num = null;
     const sm = rest.match(/^(.*?)\s+\(([A-Za-z0-9]{2,6})\)\s*([A-Za-z0-9\-★]+)?\s*$/);
     if (sm) { rest = sm[1]; set = sm[2].toLowerCase(); num = sm[3] || null; }
     const name = rest.trim();
-    if (name) out.push({ qty, name, set, num, commander });
+    if (name) out.push({ qty, name, set, num, commander, finish });
   }
   return out;
 }
@@ -1532,7 +1591,7 @@ async function importDeck(text) {
     // Keep the name the player knows it by, with the real name alongside when they differ.
     const alt = norm(e.name) !== norm(sc.name) && !norm(sc.name).startsWith(norm(e.name) + ' //');
     const name = alt ? `${e.name} (${sc.name})` : sc.name;
-    for (let k = 0; k < e.qty; k++) cards.push({ name, img: im.img, back: im.back, commander: e.commander });
+    for (let k = 0; k < e.qty; k++) cards.push({ name, img: im.img, back: im.back, commander: e.commander, finish: e.finish });
   });
   $('#deckLoad').disabled = false;
   finishImport(text, cards, notFound, sortColors(colors));
