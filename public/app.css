@@ -608,6 +608,8 @@ html, body { background: var(--table); }
   border-radius: var(--r);
   padding: var(--w);
   background:
+    /* fabric grain on picture mats (see below); a blank layer otherwise */
+    var(--tape-grain, linear-gradient(transparent 0 0)) 0 0 / 180px 180px,
     /* stitch rows, running clockwise; each straight row starts on a stitch
        where it leaves a corner */
     repeating-linear-gradient(90deg, var(--stitch-x)) var(--r) var(--s1) / var(--side) var(--sh),
@@ -647,6 +649,12 @@ html, body { background: var(--table); }
    under it, a touch darker, as if the print wraps round the edge. */
 .mat.has-art .mat-body::after {
   --bind-base: linear-gradient(rgba(0,0,0,.22), rgba(0,0,0,.32)), var(--mat-img) center / cover no-repeat, var(--bind);
+  /* the same fabric grain as the cloth, on the same 180px grid so it carries
+     straight on across the binding; soft-light on the top layer only */
+  --tape-grain: var(--mat-grain);
+  /* these lists cycle if short, so spell out every layer: grain first, then the rest */
+  background-repeat: repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat;
+  background-blend-mode: soft-light, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal;
 }
 @media (max-width: 600px) {
   .mat-body::after {
