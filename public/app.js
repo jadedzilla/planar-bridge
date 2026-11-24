@@ -290,16 +290,33 @@ function createMat(p) {
     <div class="mat-body">
       <div class="battlefield" data-drop="1" data-zone="battlefield" data-player="${p.id}"></div>
       <div class="piles">
-        <div class="pile library" data-drop="1" data-zone="library" data-player="${p.id}"><div class="library-back"></div><span class="count"></span><span class="pile-label">Library</span></div>
-        <div class="pile graveyard" data-drop="1" data-zone="graveyard" data-player="${p.id}"><div class="slot"></div><span class="count"></span><span class="pile-label">Graveyard</span></div>
-        <div class="pile exile" data-drop="1" data-zone="exile" data-player="${p.id}"><div class="slot"></div><span class="count"></span><span class="pile-label">Exile</span></div>
+        <div class="pile library" data-drop="1" data-zone="library" data-player="${p.id}"><div class="spot"><div class="library-back"></div><span class="count"></span></div><span class="pile-label">Library</span></div>
+        <div class="pile graveyard" data-drop="1" data-zone="graveyard" data-player="${p.id}"><div class="spot"><div class="slot"></div><span class="count"></span></div><span class="pile-label">Graveyard</span></div>
+        <div class="pile exile" data-drop="1" data-zone="exile" data-player="${p.id}"><div class="spot"><div class="slot"></div><span class="count"></span></div><span class="pile-label">Exile</span></div>
       </div>
     </div>`;
   mat.querySelectorAll('[data-life]').forEach((b) => {
     b.onclick = () => send({ type: 'life', playerId: p.id, delta: Number(b.dataset.life) });
   });
   $('.mat-close', mat).onclick = () => setFocus(p.id);
+  if (window.ResizeObserver) new ResizeObserver(() => sizeCards(mat)).observe($('.mat-body', mat));
   return mat;
+}
+
+// One card size per playmat, shared by the battlefield and the library,
+// graveyard and exile spots, so the spots are exactly card-sized. It follows
+// the mat's width, and shrinks if three spots plus labels wouldn't fit its height.
+function sizeCards(mat) {
+  const body = $('.mat-body', mat);
+  const cs = getComputedStyle(body);
+  const w = body.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const h = body.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  if (w <= 0 || h <= 0) return;
+  const narrow = innerWidth <= 600;
+  let cw = narrow ? Math.min(90, Math.max(34, w * 0.105)) : Math.min(130, Math.max(48, w * 0.078));
+  const fitH = ((h - 14 - 3 * 18 - 2 * 8) / 3) * (63 / 88);
+  cw = Math.max(30, Math.min(cw, fitH));
+  mat.style.setProperty('--card-w', cw.toFixed(1) + 'px');
 }
 
 function updateMat(mat, p, used) {

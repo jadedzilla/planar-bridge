@@ -381,3 +381,21 @@ html, body { background: var(--table); }
 @media (prefers-reduced-motion: reduce) {
   .card, .library-back.shuffling::before, .library-back.shuffling::after, .spindown.roll { transition: none; animation: none; }
 }
+
+/* --- Library, graveyard and exile: card-sized spots, label underneath --- */
+.battlefield .card { width: var(--card-w, clamp(48px, 8.5cqw, 130px)); }
+.piles { width: auto; flex: none; gap: 8px; justify-content: flex-start; }
+.pile { flex: none; container-type: normal; display: flex; flex-direction: column; align-items: center; gap: 4px; border: none; background: none; border-radius: 0; }
+.pile .spot { position: relative; width: var(--card-w, 80px); aspect-ratio: 63 / 88; border-radius: 5.5%/4%; box-shadow: inset 0 0 0 1px rgba(255,255,255,.13); background: rgba(0,0,0,.1); }
+.pile .slot { position: absolute; inset: 0; width: 100% !important; height: 100%; }
+.pile .spot > .library-back, .pile .slot > .card { position: absolute; inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; }
+.pile .count { top: -7px; right: -7px; z-index: 4; border-radius: 9px; padding: 1px 6px; }
+.pile .pile-label, .pile:has(.card) .pile-label { display: block; position: static; font-size: 9px; letter-spacing: 1.2px; line-height: 14px; color: rgba(255,255,255,.4); }
+.pile.drop-hover { outline: none; }
+.pile.drop-hover .spot { box-shadow: inset 0 0 0 2px var(--accent); }
+@media (max-width: 600px) {
+  .library-back, .pile .card { width: 100%; }
+  .pile .pile-label, .pile:has(.card) .pile-label { font-size: 8px; letter-spacing: .5px; }
+}
+.piles { padding-top: 14px; }
+.pile .count:empty { display: none; }
