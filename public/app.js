@@ -995,8 +995,9 @@ function faceCardOf(d) {
     || d.cards.find((c) => c.img) || null;
 }
 
-// Colour identity in the usual W U B R G order, shown as small pips
-// in the deck's top-left corner. Drawn in CSS; colourless decks get a C.
+// Colour identity in the usual W U B R G order, shown as the official mana
+// symbols (from Scryfall) in the deck's top-left corner. Colourless decks get {C}.
+// If a symbol can't load, the CSS pip with its letter underneath shows instead.
 const COLOR_ORDER = ['W', 'U', 'B', 'R', 'G'];
 const COLOR_NAME = { W: 'white', U: 'blue', B: 'black', R: 'red', G: 'green', C: 'colorless' };
 function sortColors(set) { return COLOR_ORDER.filter((c) => set.has(c)); }
@@ -1004,7 +1005,7 @@ function manaPips(colors) {
   if (!Array.isArray(colors)) return '';
   const list = colors.length ? colors : ['C'];
   const label = list.map((c) => COLOR_NAME[c]).join(', ');
-  return `<span class="deck-pips" role="img" aria-label="${label}" title="${label}">${list.map((c) => `<span class="pip pip-${c}">${c}</span>`).join('')}</span>`;
+  return `<span class="deck-pips" role="img" aria-label="${label}" title="${label}">${list.map((c) => `<span class="pip pip-${c}">${c}<img src="https://svgs.scryfall.io/card-symbols/${c}.svg" alt="" draggable="false" onerror="this.remove()"></span>`).join('')}</span>`;
 }
 
 // Decks saved before colours were recorded: look their cards up once and store the colours.
