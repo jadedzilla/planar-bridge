@@ -582,7 +582,10 @@ html, body { background: var(--table); }
   --sh: 1.2px;                   /* stitch row thickness */
   --bind: color-mix(in srgb, var(--seat, #4a7a68) 10%, #2b2f36);
   /* a stitch: a short length of thread, rounded, between two dark needle holes */
-  --stitch: rgba(0,0,0,.4) 0, rgba(255,255,255,.08) .4px, rgba(255,255,255,.22) 1.4px, rgba(255,255,255,.08) 2.4px, rgba(0,0,0,.4) 2.8px;
+  /* about 2.8px long; app.js (fitStitches) stretches it slightly per edge, as
+     --spx / --spy, so a whole number of stitches fits between the corners */
+  --stitch-x: rgba(0,0,0,.4) 0, rgba(255,255,255,.08) calc(var(--spx, 2.8px) * .143), rgba(255,255,255,.22) calc(var(--spx, 2.8px) * .5), rgba(255,255,255,.08) calc(var(--spx, 2.8px) * .857), rgba(0,0,0,.4) var(--spx, 2.8px);
+  --stitch-y: rgba(0,0,0,.4) 0, rgba(255,255,255,.08) calc(var(--spy, 2.8px) * .143), rgba(255,255,255,.22) calc(var(--spy, 2.8px) * .5), rgba(255,255,255,.08) calc(var(--spy, 2.8px) * .857), rgba(0,0,0,.4) var(--spy, 2.8px);
   /* the tape: rounded over the outer lip, pulled down into each stitch row,
      puffed up and flat across the middle, then sloping down into the inner
      groove; past the groove's stitches the cloth starts rising again */
@@ -603,14 +606,14 @@ html, body { background: var(--table); }
   background:
     /* stitch rows, running clockwise; each straight row starts on a stitch
        where it leaves a corner */
-    repeating-linear-gradient(90deg, var(--stitch)) var(--r) var(--s1) / var(--side) var(--sh),
-    repeating-linear-gradient(90deg, var(--stitch)) var(--r) var(--s2) / var(--side) var(--sh),
-    repeating-linear-gradient(180deg, var(--stitch)) right var(--s1) top var(--r) / var(--sh) var(--side),
-    repeating-linear-gradient(180deg, var(--stitch)) right var(--s2) top var(--r) / var(--sh) var(--side),
-    repeating-linear-gradient(270deg, var(--stitch)) right var(--r) bottom var(--s1) / var(--side) var(--sh),
-    repeating-linear-gradient(270deg, var(--stitch)) right var(--r) bottom var(--s2) / var(--side) var(--sh),
-    repeating-linear-gradient(0deg, var(--stitch)) left var(--s1) bottom var(--r) / var(--sh) var(--side),
-    repeating-linear-gradient(0deg, var(--stitch)) left var(--s2) bottom var(--r) / var(--sh) var(--side),
+    repeating-linear-gradient(90deg, var(--stitch-x)) var(--r) var(--s1) / var(--side) var(--sh),
+    repeating-linear-gradient(90deg, var(--stitch-x)) var(--r) var(--s2) / var(--side) var(--sh),
+    repeating-linear-gradient(180deg, var(--stitch-y)) right var(--s1) top var(--r) / var(--sh) var(--side),
+    repeating-linear-gradient(180deg, var(--stitch-y)) right var(--s2) top var(--r) / var(--sh) var(--side),
+    repeating-linear-gradient(270deg, var(--stitch-x)) right var(--r) bottom var(--s1) / var(--side) var(--sh),
+    repeating-linear-gradient(270deg, var(--stitch-x)) right var(--r) bottom var(--s2) / var(--side) var(--sh),
+    repeating-linear-gradient(0deg, var(--stitch-y)) left var(--s1) bottom var(--r) / var(--sh) var(--side),
+    repeating-linear-gradient(0deg, var(--stitch-y)) left var(--s2) bottom var(--r) / var(--sh) var(--side),
     var(--st-tl) left top / var(--r) var(--r),
     var(--st-tr) right top / var(--r) var(--r),
     var(--st-br) right bottom / var(--r) var(--r),
