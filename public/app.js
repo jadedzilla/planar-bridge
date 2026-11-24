@@ -489,25 +489,40 @@ function paintCard(el, c, zone, holder) {
   el.dataset.cardId = c.id;
   el.dataset.zone = zone;
   const hidden = !c.name || (zone === 'battlefield' && c.faceDown);
-  el.classList.toggle('back', hidden);
   setBackArt(el, playerById(c.owner));
-  el.classList.toggle('facedown-peek', zone === 'battlefield' && !!c.faceDown && !!c.name);
   el.classList.toggle('tapped', zone === 'battlefield' && !!c.tapped);
   const img = el.querySelector('img');
   const src = c.transformed && c.back ? c.back : c.img;
+  const peek = zone === 'battlefield' && !!c.faceDown && !!c.name;
+  // What's printed on the side facing up: the card image, or the back.
+  const showFace = () => {
+    el.classList.toggle('back', hidden);
+    el.classList.toggle('facedown-peek', peek);
+    if (!hidden && src && img.getAttribute('src') !== src) img.src = src;
+    if (!src) img.removeAttribute('src');
+    img.style.visibility = src ? '' : 'hidden';
+    el.querySelector('.cname').textContent = hidden ? '' : c.name || '';
+    el.title = hidden ? 'Hidden card' : c.name;
+  };
   // Turning a card over (transforming a double-faced card, or face down / up)
-  // gives it a quick flip on the table.
+  // flips it on the table. The old side stays up until the card is edge-on,
+  // exactly halfway, and the new side shows from there.
   const face = hidden ? 'back' : (c.transformed && c.back ? 'second' : 'front');
   const flipped = el.dataset.face && el.dataset.face !== face && el.isConnected && el.dataset.cardId === c.id;
   el.dataset.face = face;
-  if (flipped && el.animate && !reduceMotion.matches) {
-    el.animate([{ rotate: 'y 0deg' }, { rotate: 'y 90deg', offset: 0.5 }, { rotate: 'y 0deg' }], { duration: 320, easing: 'ease-in-out' });
-  }
-  if (!hidden && src && img.getAttribute('src') !== src) img.src = src;
-  if (!src) img.removeAttribute('src');
-  img.style.visibility = src ? '' : 'hidden';
-  el.querySelector('.cname').textContent = hidden ? '' : c.name || '';
-  el.title = hidden ? 'Hidden card' : c.name;
+  if (el.flipping) {
+    el.flipping.showFace = showFace; // mid-flip: the latest side goes up at the halfway point
+  } else if (flipped && el.animate && !reduceMotion.matches) {
+    if (!hidden && src) new Image().src = src; // have the new side ready by the halfway point
+    const flip = { showFace };
+    el.flipping = flip;
+    const half = el.animate([{ rotate: 'y 0deg' }, { rotate: 'y 90deg' }], { duration: 160, easing: 'ease-in' });
+    half.onfinish = half.oncancel = () => {
+      flip.showFace();
+      el.flipping = null;
+      el.animate([{ rotate: 'y -90deg' }, { rotate: 'y 0deg' }], { duration: 160, easing: 'ease-out' });
+    };
+  } else showFace();
 
   let ctr = el.querySelector('.ctr');
   if (zone === 'battlefield' && c.counters) {
