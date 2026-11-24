@@ -577,7 +577,7 @@ html, body { background: var(--table); }
   --hi: rgba(255,255,255,.13);   /* lit side of a thread */
   --lo: rgba(0,0,0,.24);         /* gap between threads */
   --thread: var(--hi) 0, rgba(255,255,255,0) .9px, var(--lo) 1.3px, rgba(0,0,0,0) 2.3px;
-  --thread-c: var(--hi) 0deg, rgba(255,255,255,0) 3.2deg, var(--lo) 4.6deg, rgba(0,0,0,0) 8deg;
+  --thread-c: var(--hi) 0deg, rgba(255,255,255,0) 2.9deg, var(--lo) 4.2deg, rgba(0,0,0,0) 7.5deg; /* 12 loops per corner */
   --roll: rgba(0,0,0,.34), rgba(255,255,255,.07) 38%, rgba(255,255,255,0) 62%, rgba(0,0,0,.3);
   --inner: calc(var(--r) - var(--w));
   --mid: calc(var(--r) - var(--w) * .62);
@@ -597,11 +597,13 @@ html, body { background: var(--table); }
     radial-gradient(circle at 0 100%, transparent var(--inner), var(--roll-c)) right top / var(--r) var(--r),
     radial-gradient(circle at 100% 0, transparent var(--inner), var(--roll-c)) left bottom / var(--r) var(--r),
     radial-gradient(circle at 0 0, transparent var(--inner), var(--roll-c)) right bottom / var(--r) var(--r),
-    /* thread loops, slanted a little like overlock stitches */
-    repeating-linear-gradient(76deg, var(--thread)) center top / var(--side) var(--w),
-    repeating-linear-gradient(76deg, var(--thread)) center bottom / var(--side) var(--w),
-    repeating-linear-gradient(166deg, var(--thread)) left center / var(--w) var(--side),
-    repeating-linear-gradient(166deg, var(--thread)) right center / var(--w) var(--side),
+    /* thread loops, running clockwise round the rim. Each straight run starts
+       on a whole loop where it leaves a corner, and each corner fan has a whole
+       number of loops, so the loops line up across every joint. */
+    repeating-linear-gradient(90deg, var(--thread)) var(--r) top / var(--side) var(--w),
+    repeating-linear-gradient(180deg, var(--thread)) right var(--r) / var(--w) var(--side),
+    repeating-linear-gradient(270deg, var(--thread)) right var(--r) bottom / var(--side) var(--w),
+    repeating-linear-gradient(0deg, var(--thread)) left bottom var(--r) / var(--w) var(--side),
     repeating-conic-gradient(from 0deg at 100% 100%, var(--thread-c)) left top / var(--r) var(--r),
     repeating-conic-gradient(from 0deg at 0 100%, var(--thread-c)) right top / var(--r) var(--r),
     repeating-conic-gradient(from 0deg at 100% 0, var(--thread-c)) left bottom / var(--r) var(--r),
