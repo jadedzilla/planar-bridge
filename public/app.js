@@ -1153,19 +1153,27 @@ function renderPileSheet() {
 }
 
 // ---------- Deck import ----------
-const SAMPLE_DECK = `// Sample: mono-red aggro (60 cards)
-4 Monastery Swiftspear
-4 Goblin Guide
+const SAMPLE_DECK = `// Sample: mono-red aggro (60 cards), with some foil (*F*) and etched (*E*) cards
+2 Monastery Swiftspear
+2 Monastery Swiftspear *F*
+3 Goblin Guide
+1 Goblin Guide *E*
 4 Bloodthirsty Adversary
-4 Kumano Faces Kakkazan
-4 Lightning Bolt
+3 Kumano Faces Kakkazan
+1 Kumano Faces Kakkazan *F*
+2 Lightning Bolt
+2 Lightning Bolt *F*
 4 Play with Fire
 4 Light Up the Stage
-4 Skewer the Critics
-4 Embercleave
-2 Fable of the Mirror-Breaker
-2 Delver of Secrets
-20 Mountain`;
+3 Skewer the Critics
+1 Skewer the Critics *E*
+3 Embercleave
+1 Embercleave *E*
+1 Fable of the Mirror-Breaker
+1 Fable of the Mirror-Breaker *F*
+2 Delver of Secrets *F*
+16 Mountain
+4 Mountain *F*`;
 
 // ---------- Saved decks ----------
 // GUESS: decks are saved on this device only (localStorage), with no accounts.
