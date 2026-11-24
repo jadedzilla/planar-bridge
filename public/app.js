@@ -58,6 +58,7 @@ function onMessage(msg) {
   } else if (msg.type === 'state') {
     app.s = msg.state;
     render();
+    preloadTableImages();
     if (app.pendingDeck) bringPendingDeck();
     bringSavedPlaymat();
     if (app.library && sheetKind === 'library') send({ type: 'searchLibrary', quiet: true });
@@ -482,6 +483,38 @@ function makeCardEl() {
   // If an image fails, fall back to showing the card name.
   el.querySelector('img').onerror = function () { this.style.visibility = 'hidden'; };
   return el;
+}
+
+// Every tablet keeps both faces of each card it can see, and every card back
+// at the table, loaded and decoded ahead of time. Then a flip, transform or
+// turn face up/down shows the new side straight away instead of popping in.
+// (A face-down card's front is hidden from other players, so theirs can only
+// load once it's turned up.)
+const OFFICIAL_BACK = 'https://backs.scryfall.io/large/0/a/0aeebaf5-8c7d-4636-9e82-8c27447861f7.jpg';
+const preloaded = new Map(); // url -> Image, held so the decoded picture stays ready
+function preloadTableImages() {
+  const s = app.s;
+  if (!s) return;
+  const want = new Set([OFFICIAL_BACK]);
+  for (const p of s.players) {
+    if (p.cardBack) want.add(new URL(backUrl(p), location.href).href);
+    for (const list of Object.values(p.zones || {})) {
+      for (const c of list || []) {
+        if (c.img) want.add(c.img);
+        if (c.back) want.add(c.back);
+      }
+    }
+  }
+  for (const url of want) {
+    if (preloaded.has(url)) continue;
+    const im = new Image();
+    im.decoding = 'async';
+    im.src = url;
+    if (im.decode) im.decode().catch(() => {});
+    preloaded.set(url, im);
+  }
+  // Let go of cards that have left the table (back in a library, or a new deck).
+  for (const url of preloaded.keys()) if (!want.has(url)) preloaded.delete(url);
 }
 
 // Fill a card element from the card's view data.
