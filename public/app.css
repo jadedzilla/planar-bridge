@@ -222,3 +222,184 @@ button { font: inherit; color: inherit; }
   .me-life button { width: 36px; height: 34px; }
   .me-life .val { min-width: 44px; font-size: 22px; }
 }
+
+/* =====================================================================
+   Tabletop look. Physical objects with real depth and one light source
+   (from above), but kept clean: matte surfaces, no textures or ornament.
+   Everything is drawn with CSS, no image assets.
+   ===================================================================== */
+:root {
+  --table: #1b1d21;
+  --light: radial-gradient(ellipse 80% 70% at 50% 35%, rgba(255,255,255,.06), transparent 70%);
+  --raise-1: 0 1px 0 rgba(255,255,255,.07) inset, 0 1px 2px rgba(0,0,0,.35), 0 2px 6px rgba(0,0,0,.25);
+  --raise-2: 0 1px 0 rgba(255,255,255,.08) inset, 0 2px 4px rgba(0,0,0,.3), 0 10px 24px rgba(0,0,0,.35);
+}
+html, body { background: var(--table); }
+.game, .landing { background: var(--light), var(--table); }
+
+/* --- The playmat: a smooth, slightly raised mat lying on the table --- */
+.my-area > .mat { background: transparent; }
+.mat { background: var(--light), var(--table); }
+.mat-body { position: relative; --mt: 6px; --mr: 6px; --mb: 6px; --ml: 6px; }
+.my-area .mat-body { --mt: var(--edge); --mr: var(--edge); --mb: calc(var(--hand-h) + 6px); --ml: var(--edge); }
+.game.hand-hidden .my-area .mat-body { --mb: 8px; }
+.mat-body::before { content: ""; position: absolute; top: var(--mt); right: var(--mr); bottom: var(--mb); left: var(--ml); pointer-events: none; transition: bottom .25s ease; }
+.mat-body::before {
+  --cloth: color-mix(in srgb, var(--seat, #4a7a68) 9%, #262a31);
+  border-radius: 20px;
+  background:
+    radial-gradient(ellipse 75% 65% at 50% 30%, rgba(255,255,255,.05), transparent 70%),
+    var(--cloth);
+  box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, 0 -1px 0 rgba(0,0,0,.25) inset, 0 1px 1px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.35);
+}
+.mat-body > * { position: relative; z-index: 1; }
+.mat-body { padding: calc(var(--mt) + 10px) calc(var(--mr) + 10px) calc(var(--mb) + 10px) calc(var(--ml) + 10px) !important; }
+.my-area .battlefield, .battlefield { background: transparent; box-shadow: none !important; }
+.battlefield::after { color: rgba(255,255,255,.2); font-size: 15px; }
+.focus-area .mat { border-color: rgba(255,255,255,.08); }
+.focus-area .mat-head { background: rgba(20,22,26,.9); }
+
+/* Zones: faint outlines printed on the mat */
+.pile { border: 1px solid rgba(255,255,255,.1); border-radius: 10px; background: rgba(0,0,0,.08); }
+.pile-label { text-transform: uppercase; letter-spacing: 1.2px; font-size: 9px; color: rgba(255,255,255,.32); text-shadow: none; }
+
+/* --- Cards: a thin sleeve rim in the owner's colour and a soft shadow --- */
+.card {
+  --sleeve: color-mix(in srgb, var(--owner-sleeve, #3a3f48) 80%, #101114);
+  background: var(--sleeve);
+  border-radius: 5.5%/4%;
+  box-shadow: 0 1px 1px rgba(0,0,0,.35), 0 3px 8px rgba(0,0,0,.28);
+  transition: transform .3s cubic-bezier(.3,1.3,.55,1), box-shadow .2s ease;
+}
+.card img { inset: 2.2% 2.4%; width: 95.2%; height: 95.6%; border-radius: 4.5%/3.3%; }
+.card .cname { inset: 7%; }
+.card:active:not(.back) { box-shadow: 0 2px 3px rgba(0,0,0,.3), 0 12px 22px rgba(0,0,0,.35); }
+.card.tapped { transform: rotate(90deg); }
+.card.dragging-src { opacity: .22; }
+.ghost { transform: rotate(3deg) scale(1.08); box-shadow: 0 4px 8px rgba(0,0,0,.25), 0 22px 40px rgba(0,0,0,.45); }
+
+/* Card back (our own simple design): matte face with one embossed ring */
+.card.back, .library-back {
+  border: 3px solid var(--sleeve);
+  background:
+    radial-gradient(circle at 50% 50%, transparent 0 17%, rgba(255,255,255,.14) 17.5% 19%, transparent 19.5%),
+    radial-gradient(circle at 50% 51%, transparent 0 17%, rgba(0,0,0,.25) 17.5% 19%, transparent 19.5%),
+    linear-gradient(160deg, #3a3550, #26223a);
+  background-clip: padding-box;
+}
+
+/* --- Library: a stack whose height follows the card count --- */
+.library-back {
+  --sleeve: color-mix(in srgb, var(--seat, #555) 80%, #101114);
+  position: relative;
+  border-radius: 5.5%/4%;
+  box-shadow: var(--stack, none), 0 4px 10px rgba(0,0,0,.35);
+  transform: translate(calc(var(--depth, 0px) * -.5), calc(var(--depth, 0px) * -1));
+}
+.pile .card { box-shadow: var(--stack, none), 0 3px 8px rgba(0,0,0,.3); transform: translateY(calc(var(--depth, 0px) * -1)); }
+.library-back::before, .library-back::after { content: ""; position: absolute; inset: -3px; border-radius: inherit; background: inherit; border: inherit; opacity: 0; pointer-events: none; box-shadow: 0 3px 8px rgba(0,0,0,.35); }
+.library-back.shuffling::before { animation: riffle-l .75s ease-in-out; }
+.library-back.shuffling::after { animation: riffle-r .75s ease-in-out; }
+@keyframes riffle-l {
+  0%, 100% { opacity: 1; transform: none; }
+  20%, 60% { opacity: 1; transform: translate(-58%, -6%) rotate(-12deg); }
+  40% { opacity: 1; transform: translate(-48%, -2%) rotate(-6deg); }
+}
+@keyframes riffle-r {
+  0%, 100% { opacity: 1; transform: none; }
+  20%, 60% { opacity: 1; transform: translate(58%, -6%) rotate(12deg); }
+  40% { opacity: 1; transform: translate(48%, -2%) rotate(6deg); }
+}
+
+/* --- Hand: held as a fan --- */
+.hand { align-items: flex-end; padding-bottom: 4px; }
+.hand .card { transform-origin: 50% 130%; transform: translateY(var(--dy, 0px)) rotate(var(--rot, 0deg)); box-shadow: -1px 2px 4px rgba(0,0,0,.3), 0 6px 14px rgba(0,0,0,.25); }
+.hand .card:hover { transform: translateY(calc(var(--dy, 0px) - 16px)) rotate(var(--rot, 0deg)) scale(1.05); }
+.handbar { background: linear-gradient(to top, rgba(16,17,20,.92), rgba(16,17,20,.5) 70%, rgba(16,17,20,0)); -webkit-backdrop-filter: none; backdrop-filter: none; border-top: none; }
+.hand-tab { background: #2a2e35; border: none; box-shadow: var(--raise-1); }
+
+/* --- Life: a spindown die, matte with soft facets --- */
+.me-life { background: none; padding: 0; gap: 6px; }
+.me-life button, .btn.round, .hud .code-chip {
+  border: none; color: var(--text); background: linear-gradient(#30353d, #272b32); box-shadow: var(--raise-1);
+}
+.me-life button { width: 42px; height: 42px; border-radius: 50%; font-size: 22px; }
+.me-life button:active, .btn.round:active { transform: translateY(1px); box-shadow: 0 1px 2px rgba(0,0,0,.35); }
+.spindown {
+  --die: var(--my-seat, #4f7fd0);
+  position: relative; display: grid; place-items: center;
+  width: 80px; height: 90px; flex: none;
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,.35)) drop-shadow(0 8px 12px rgba(0,0,0,.3));
+}
+.spindown::before, .spindown::after { content: ""; position: absolute; inset: 0; pointer-events: none; }
+/* hexagon outline of a d20 with three soft facets, then its top face */
+.spindown::before {
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+  background: conic-gradient(from 30deg at 50% 50%,
+    color-mix(in srgb, var(--die) 78%, #000) 0 120deg,
+    color-mix(in srgb, var(--die) 62%, #000) 120deg 240deg,
+    color-mix(in srgb, var(--die) 90%, #fff) 240deg 360deg);
+}
+.spindown::after {
+  inset: 22% 14% 18%;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--die) 85%, #fff), var(--die));
+}
+.spindown .val, .me-life .spindown .val { position: relative; z-index: 1; min-width: 0; margin-top: 26%; font-size: 24px; font-weight: 700; color: #fff; text-shadow: 0 1px 1px rgba(0,0,0,.35); font-variant-numeric: tabular-nums; }
+.spindown .val.low { color: #fff; }
+.spindown:has(.val.low) { --die: var(--danger); }
+.spindown.roll { animation: die-roll .45s cubic-bezier(.3,1.4,.5,1); }
+@keyframes die-roll { 0% { transform: rotate(0) scale(1); } 40% { transform: rotate(-20deg) scale(.92); } 100% { transform: rotate(0) scale(1); } }
+
+/* Small dice on the opponent bands */
+.edge-die { --die: var(--seat, #666); width: 36px; height: 40px; filter: drop-shadow(0 1px 2px rgba(0,0,0,.4)); }
+.edge-die .val { font-size: 13px !important; margin-top: 30% !important; }
+.edge[data-rel="1"] .edge-die, .edge[data-rel="3"] .edge-die { writing-mode: horizontal-tb; }
+.edge[data-rel="1"] .edge-die .val { display: inline-block; transform: rotate(90deg); }
+.edge[data-rel="3"] .edge-die .val { display: inline-block; transform: rotate(-90deg); }
+
+/* --- Opponent bands: the near edge of their mat --- */
+.edge {
+  background: color-mix(in srgb, var(--seat, #4a7a68) 9%, #262a31);
+  border: none;
+  box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, inset 0 0 0 1px color-mix(in srgb, var(--seat, #fff) 35%, transparent), 0 6px 16px rgba(0,0,0,.35);
+  color: var(--text);
+}
+.edge.empty { background: rgba(255,255,255,.02); box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); }
+.edge.focused { box-shadow: inset 0 0 0 2px var(--seat), 0 6px 16px rgba(0,0,0,.35); }
+.edge.drop-hover { background: color-mix(in srgb, var(--accent) 30%, #23272e); }
+
+@media (max-width: 600px) {
+  .library-back, .pile .card { width: 88%; }
+  .pile-label { letter-spacing: .5px; font-size: 8px; }
+  .spindown { width: 60px; height: 68px; }
+  .spindown .val, .me-life .spindown .val { font-size: 18px; }
+  .me-life button { width: 34px; height: 34px; font-size: 18px; }
+  .edge-die { width: 30px; height: 34px; }
+  .edge-die .val { font-size: 12px !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card, .library-back.shuffling::before, .library-back.shuffling::after, .spindown.roll { transition: none; animation: none; }
+}
+
+/* --- Library, graveyard and exile: card-sized spots, label underneath --- */
+.battlefield .card { width: var(--card-w, clamp(48px, 8.5cqw, 130px)); }
+.piles { width: auto; flex: none; gap: 8px; justify-content: flex-start; }
+.pile { flex: none; container-type: normal; display: flex; flex-direction: column; align-items: center; gap: 4px; border: none; background: none; border-radius: 0; }
+.pile .spot { position: relative; width: var(--card-w, 80px); aspect-ratio: 63 / 88; border-radius: 5.5%/4%; box-shadow: inset 0 0 0 1px rgba(255,255,255,.13); background: rgba(0,0,0,.1); }
+.pile .slot { position: absolute; inset: 0; width: 100% !important; height: 100%; }
+.pile .spot > .library-back, .pile .slot > .card { position: absolute; inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; }
+.pile .count { top: -7px; right: -7px; z-index: 4; border-radius: 9px; padding: 1px 6px; }
+.pile .pile-label, .pile:has(.card) .pile-label { display: block; position: static; font-size: 9px; letter-spacing: 1.2px; line-height: 14px; color: rgba(255,255,255,.4); }
+.pile.drop-hover { outline: none; }
+.pile.drop-hover .spot { box-shadow: inset 0 0 0 2px var(--accent); }
+@media (max-width: 600px) {
+  .library-back, .pile .card { width: 100%; }
+  .pile .pile-label, .pile:has(.card) .pile-label { font-size: 8px; letter-spacing: .5px; }
+}
+.piles { padding-top: 14px; }
+.pile .count:empty { display: none; }
+
+/* Life number centred on the die: the top face is a smaller hexagon around it */
+.spindown::after { inset: 18% 16%; clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%); }
+.spindown .val, .me-life .spindown .val, .edge-die .val { margin-top: 0 !important; text-align: center; line-height: 1; }

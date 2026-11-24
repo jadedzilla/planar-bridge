@@ -16,6 +16,9 @@ const app = {
   cardEls: new Map(),
   matEls: new Map(),
   focus: null, // opponent whose full playmat is open
+  shuffleSeen: new Map(), // player id -> shuffle count last shown
+  settled: new Map(), // card id -> time it was dropped by hand here (no glide)
+  lastLife: null,
 };
 
 // ---------- Connection ----------
@@ -152,6 +155,7 @@ function render() {
   if (!s || !mine) return;
   const used = new Set();
   if (app.focus && !playerById(app.focus)) app.focus = null;
+  const before = snapshotCards();
 
   // Edge bands
   for (const rel of [1, 2, 3]) updateEdge($(`.edge[data-rel="${rel}"]`), playerAtRel(rel), rel);
@@ -173,6 +177,8 @@ function render() {
   updateMat(myMat, mine, used);
   $('#myLife').textContent = mine.life;
   $('#myLife').classList.toggle('low', mine.life <= 5);
+  if (app.lastLife != null && app.lastLife !== mine.life) replay($('#myDie'), 'roll');
+  app.lastLife = mine.life;
   $('#game').style.setProperty('--my-seat', mine.color);
 
   for (const [id, mat] of app.matEls) {
@@ -188,6 +194,7 @@ function render() {
 
   // Drop cards we no longer show anywhere
   for (const [id, el] of app.cardEls) if (!used.has(id)) { el.remove(); app.cardEls.delete(id); }
+  glideCards(before, mine);
 
   renderLog();
   if (sheetKind === 'pile') renderPileSheet();
@@ -220,7 +227,7 @@ function updateEdge(el, p, rel) {
   el.style.setProperty('--seat', p.color);
   el.classList.toggle('focused', app.focus === p.id);
   el.innerHTML = `<span class="edge-inner"><span class="dot"></span><b>${esc(p.name)}</b>${p.connected ? '' : ' <span class="offline">offline</span>'}
-    <span class="edge-life${p.life <= 5 ? ' low' : ''}">${p.life}</span>
+    <span class="spindown edge-die"><span class="val edge-life${p.life <= 5 ? ' low' : ''}">${p.life}</span></span>
     <span class="muted">Hand ${p.counts.hand} · Board ${p.counts.battlefield}</span></span>`;
 }
 
@@ -283,16 +290,33 @@ function createMat(p) {
     <div class="mat-body">
       <div class="battlefield" data-drop="1" data-zone="battlefield" data-player="${p.id}"></div>
       <div class="piles">
-        <div class="pile library" data-drop="1" data-zone="library" data-player="${p.id}"><div class="library-back"></div><span class="count"></span><span class="pile-label">Library</span></div>
-        <div class="pile graveyard" data-drop="1" data-zone="graveyard" data-player="${p.id}"><div class="slot"></div><span class="count"></span><span class="pile-label">Graveyard</span></div>
-        <div class="pile exile" data-drop="1" data-zone="exile" data-player="${p.id}"><div class="slot"></div><span class="count"></span><span class="pile-label">Exile</span></div>
+        <div class="pile library" data-drop="1" data-zone="library" data-player="${p.id}"><div class="spot"><div class="library-back"></div><span class="count"></span></div><span class="pile-label">Library</span></div>
+        <div class="pile graveyard" data-drop="1" data-zone="graveyard" data-player="${p.id}"><div class="spot"><div class="slot"></div><span class="count"></span></div><span class="pile-label">Graveyard</span></div>
+        <div class="pile exile" data-drop="1" data-zone="exile" data-player="${p.id}"><div class="spot"><div class="slot"></div><span class="count"></span></div><span class="pile-label">Exile</span></div>
       </div>
     </div>`;
   mat.querySelectorAll('[data-life]').forEach((b) => {
     b.onclick = () => send({ type: 'life', playerId: p.id, delta: Number(b.dataset.life) });
   });
   $('.mat-close', mat).onclick = () => setFocus(p.id);
+  if (window.ResizeObserver) new ResizeObserver(() => sizeCards(mat)).observe($('.mat-body', mat));
   return mat;
+}
+
+// One card size per playmat, shared by the battlefield and the library,
+// graveyard and exile spots, so the spots are exactly card-sized. It follows
+// the mat's width, and shrinks if three spots plus labels wouldn't fit its height.
+function sizeCards(mat) {
+  const body = $('.mat-body', mat);
+  const cs = getComputedStyle(body);
+  const w = body.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const h = body.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  if (w <= 0 || h <= 0) return;
+  const narrow = innerWidth <= 600;
+  let cw = narrow ? Math.min(90, Math.max(34, w * 0.105)) : Math.min(130, Math.max(48, w * 0.078));
+  const fitH = ((h - 14 - 3 * 18 - 2 * 8) / 3) * (63 / 88);
+  cw = Math.max(30, Math.min(cw, fitH));
+  mat.style.setProperty('--card-w', cw.toFixed(1) + 'px');
 }
 
 function updateMat(mat, p, used) {
@@ -315,8 +339,14 @@ function updateMat(mat, p, used) {
 
   const lib = $('.pile.library', mat);
   lib.classList.toggle('mine', isMe);
-  $('.library-back', lib).style.visibility = p.counts.library ? 'visible' : 'hidden';
+  const back = $('.library-back', lib);
+  back.style.visibility = p.counts.library ? 'visible' : 'hidden';
+  setStack(back, p.counts.library);
   $('.count', lib).textContent = p.counts.library;
+  // Riffle the stack whenever this player shuffles (seen on every tablet).
+  const seen = app.shuffleSeen.get(p.id);
+  if (seen != null && p.shuffles > seen) replay(back, 'shuffling');
+  app.shuffleSeen.set(p.id, p.shuffles);
 
   for (const z of ['graveyard', 'exile']) {
     const pile = $('.pile.' + z, mat);
@@ -324,7 +354,79 @@ function updateMat(mat, p, used) {
     $('.count', pile).textContent = list.length || '';
     const slot = $('.slot', pile);
     slot.style.width = '100%';
-    syncChildren(slot, list.length ? [cardEl(list[list.length - 1], z, p, used)] : []);
+    const top = list.length ? cardEl(list[list.length - 1], z, p, used) : null;
+    syncChildren(slot, top ? [top] : []);
+    if (top) setStack(top, list.length);
+  }
+}
+
+// ---------- Physical feel: stacks, glides, replays ----------
+// Thickness of a pile: the top card sits higher and the edges of the cards
+// underneath show as thin layers, like a real stack of sleeved cards.
+function setStack(el, n) {
+  const layers = Math.min(14, Math.ceil(n / 5));
+  const depth = Math.min(layers, 14) * 0.9;
+  const edges = [];
+  for (let i = 1; i <= layers; i++) {
+    const c = i % 2 ? 'rgba(10,10,10,.92)' : 'color-mix(in srgb, var(--sleeve) 75%, #000)';
+    edges.push(`${(i * 0.45).toFixed(2)}px ${(i * 0.9).toFixed(2)}px 0 ${c}`);
+  }
+  el.style.setProperty('--depth', depth.toFixed(1) + 'px');
+  el.style.setProperty('--stack', edges.length ? edges.join(', ') : '0 0 0 transparent');
+}
+
+// Restart a CSS animation class, even if it's already running.
+function replay(el, cls) {
+  if (!el) return;
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
+  el.addEventListener('animationend', () => el.classList.remove(cls), { once: true });
+}
+
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+function snapshotCards() {
+  const snap = new Map();
+  for (const [id, el] of app.cardEls) {
+    if (!el.isConnected) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width) snap.set(id, { x: r.left + r.width / 2, y: r.top + r.height / 2, w: el.offsetWidth });
+  }
+  const lib = app.matEls.get(app.s && app.s.you);
+  const back = lib && $('.library-back', lib);
+  if (back && back.isConnected) {
+    const r = back.getBoundingClientRect();
+    snap.set('LIBRARY', { x: r.left + r.width / 2, y: r.top + r.height / 2, w: back.offsetWidth, n: me() ? me().counts.library : 0 });
+  }
+  return snap;
+}
+
+// Cards slide from where they were to where they are now, instead of jumping.
+// Cards new to my hand while my library shrank are drawn: they come off the deck.
+function glideCards(before, mine) {
+  if (reduceMotion.matches || !Element.prototype.animate) return;
+  const now = performance.now();
+  for (const [id, t] of app.settled) if (now - t > 1200) app.settled.delete(id);
+  const lib = before.get('LIBRARY');
+  const drew = lib && lib.n > mine.counts.library;
+  const handIds = new Set(mine.zones.hand.map((c) => c.id));
+  for (const [id, el] of app.cardEls) {
+    if (!el.isConnected || app.settled.has(id)) continue;
+    let from = before.get(id);
+    const drawn = !from && drew && handIds.has(id);
+    if (drawn) from = lib;
+    if (!from) continue;
+    const r = el.getBoundingClientRect();
+    const dx = from.x - (r.left + r.width / 2);
+    const dy = from.y - (r.top + r.height / 2);
+    if (Math.hypot(dx, dy) < 3) continue;
+    const s = from.w && el.offsetWidth ? from.w / el.offsetWidth : 1;
+    el.animate(
+      drawn
+        ? [{ translate: `${dx}px ${dy}px`, scale: String(s), rotate: '-6deg' }, { translate: `${dx * 0.4}px ${dy * 0.55 - 30}px`, scale: String(1 + (s - 1) * 0.3), rotate: '-10deg', offset: 0.45 }, { translate: '0px 0px', scale: '1', rotate: '0deg' }]
+        : [{ translate: `${dx}px ${dy}px`, scale: String(s) }, { translate: '0px 0px', scale: '1' }],
+      { duration: drawn ? 480 : 300, easing: 'cubic-bezier(.25,.8,.3,1)' }
+    );
   }
 }
 
@@ -362,6 +464,7 @@ function paintCard(el, c, zone, holder) {
   // Coloured dot = someone else's card sitting on this playmat.
   let dot = el.querySelector('.owner-dot');
   const owner = playerById(c.owner);
+  if (owner) el.style.setProperty('--owner-sleeve', owner.color);
   if (holder && owner && owner.id !== holder.id) {
     if (!dot) { dot = document.createElement('span'); dot.className = 'owner-dot'; el.appendChild(dot); }
     el.style.setProperty('--owner', owner.color);
@@ -395,6 +498,13 @@ function layoutHand() {
   const needed = n * (cw + 4);
   const overlap = needed > avail ? -Math.min(cw * 0.75, (needed - avail) / Math.max(1, n - 1) + 4) : 4;
   hand.style.setProperty('--overlap', overlap + 'px');
+  // Fan the cards like they're held: a few degrees each, edges dipping lower.
+  const step = Math.min(5, 36 / Math.max(1, n - 1));
+  [...hand.children].forEach((el, i) => {
+    const k = i - (n - 1) / 2;
+    el.style.setProperty('--rot', (k * step).toFixed(2) + 'deg');
+    el.style.setProperty('--dy', (Math.abs(k) * Math.abs(k) * step * 0.18 + 4).toFixed(1) + 'px');
+  });
 }
 window.addEventListener('resize', layoutHand);
 
@@ -551,6 +661,7 @@ function sendFlick(d, to, vx, vy) {
   const tx = (vx / sp) * dist;
   const ty = (vy / sp) * dist;
   d.src.style.visibility = 'hidden';
+  app.settled.set(d.id, performance.now());
   const finish = () => {
     g.remove();
     d.src.classList.remove('dragging-src');
@@ -568,6 +679,7 @@ function sendFlick(d, to, vx, vy) {
 function finishDrag(d, x, y) {
   const target = dropTargetAt(x, y);
   cleanupDrag(d);
+  app.settled.set(d.id, performance.now());
   if (!target) return;
   const toZone = target.dataset.zone;
   const toPlayer = target.dataset.player;

@@ -173,6 +173,7 @@ function viewFor(room, viewerId) {
       pos: p.pos,
       color: SEAT_COLORS[p.seat],
       life: p.life,
+      shuffles: p.shuffles || 0, // lets every tablet play the shuffle motion
       connected: p.connected,
       counts: Object.fromEntries(ZONES.map((z) => [z, p.zones[z].length])),
       zones: {
@@ -243,6 +244,7 @@ function handle(ws, msg) {
         if (c.commander) cardObj.commander = true;
       }
       shuffle(me.zones.library);
+      me.shuffles = (me.shuffles || 0) + 1;
       // GUESS: there is no command zone yet, so commanders start on the battlefield's top-left corner.
       let ci = 0;
       for (const c of room.cards.values()) {
@@ -318,6 +320,7 @@ function handle(ws, msg) {
     }
     case 'shuffle': {
       shuffle(me.zones.library);
+      me.shuffles = (me.shuffles || 0) + 1;
       addLog(room, `${me.name} shuffled their library.`);
       break;
     }
@@ -350,6 +353,7 @@ function handle(ws, msg) {
         if (c.owner === me.id) placeCard(room, c, me.id, 'library');
       }
       shuffle(me.zones.library);
+      me.shuffles = (me.shuffles || 0) + 1;
       me.life = room.startingLife;
       addLog(room, `${me.name} reset: all their cards back in library, shuffled, life ${me.life}.`);
       break;
