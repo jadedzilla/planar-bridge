@@ -102,6 +102,7 @@ $('#codeInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#
 function boot() {
   $('#nameInput').value = savedName();
   renderLandingDecks();
+  fillDeckColors();
   const m = location.pathname.match(/^\/s\/([A-Za-z0-9]{5})/);
   if (m) {
     const code = m[1].toUpperCase();
@@ -965,9 +966,9 @@ function guessDeckName(text, cards) {
 }
 
 // Returns the saved deck, or throws if the device has no room left.
-function saveDeck({ id, name, text, cards }) {
+function saveDeck({ id, name, text, cards, colors }) {
   const decks = loadDecks();
-  const deck = { id: id || 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: name.slice(0, 60), text, cards: packCards(cards), updated: Date.now() };
+  const deck = { id: id || 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: name.slice(0, 60), text, cards: packCards(cards), colors: colors || null, updated: Date.now() };
   const i = decks.findIndex((d) => d.id === deck.id);
   if (i >= 0) decks[i] = deck; else decks.push(deck);
   storeDecks(decks);
@@ -994,6 +995,46 @@ function faceCardOf(d) {
     || d.cards.find((c) => c.img) || null;
 }
 
+// Colour identity in the usual W U B R G order, shown as small pips
+// in the deck's top-left corner. Drawn in CSS; colourless decks get a C.
+const COLOR_ORDER = ['W', 'U', 'B', 'R', 'G'];
+const COLOR_NAME = { W: 'white', U: 'blue', B: 'black', R: 'red', G: 'green', C: 'colorless' };
+function sortColors(set) { return COLOR_ORDER.filter((c) => set.has(c)); }
+function manaPips(colors) {
+  if (!Array.isArray(colors)) return '';
+  const list = colors.length ? colors : ['C'];
+  const label = list.map((c) => COLOR_NAME[c]).join(', ');
+  return `<span class="deck-pips" role="img" aria-label="${label}" title="${label}">${list.map((c) => `<span class="pip pip-${c}">${c}</span>`).join('')}</span>`;
+}
+
+// Decks saved before colours were recorded: look their cards up once and store the colours.
+let fillingColors = false;
+async function fillDeckColors() {
+  if (fillingColors) return;
+  const todo = loadDecks().filter((d) => !Array.isArray(d.colors));
+  if (!todo.length) return;
+  fillingColors = true;
+  try {
+    for (const d of todo) {
+      // "Flavor name (Real name)" entries keep the real name in brackets.
+      const names = [...new Set(d.cards.map((c) => { const m = c.name.match(/\(([^()]+)\)$/); return (m ? m[1] : c.name).split(' // ')[0]; }))];
+      const colors = new Set();
+      for (let i = 0; i < names.length; i += 75) {
+        const data = await scryfallCollection(names.slice(i, i + 75).map((name) => ({ name })));
+        for (const c of data.data || []) for (const x of c.color_identity || []) colors.add(x);
+        await sleep(550);
+      }
+      const all = loadDecks();
+      const hit = all.find((x) => x.id === d.id);
+      if (!hit) continue;
+      hit.colors = sortColors(colors);
+      storeDecks(all);
+      if (!$('#landing').hidden) renderLandingDecks();
+    }
+  } catch { /* offline or Scryfall busy: try again next time */ }
+  fillingColors = false;
+}
+
 function renderLandingDecks() {
   const shelf = $('#deckList');
   const scroll = shelf.scrollLeft;
@@ -1009,6 +1050,7 @@ function renderLandingDecks() {
       <span class="deck-stack" data-size="${deckSize(d)}" style="--sleeve:${sleeveOf(d)}">
         <span class="deck-top${face ? '' : ' back'}">${face ? `<img src="${esc(face.img)}" alt="" loading="lazy" draggable="false">` : ''}</span>
         <span class="deck-qty">${deckSize(d)}</span>
+        ${manaPips(d.colors)}
       </span>
       <span class="deck-label">${esc(d.name)}</span>
       ${on ? `<span class="deck-actions">
@@ -1120,7 +1162,7 @@ function openDeckSheet(opts = {}) {
 }
 
 // After the Scryfall lookup: save the deck and/or put it on the table, as the sheet asks.
-function finishImport(text, cards, notFound) {
+function finishImport(text, cards, notFound, colors) {
   const status = $('#deckStatus');
   if (!cards.length) return (status.textContent = 'None of those cards were found on Scryfall.');
   const opts = sheetData || { mode: 'game' };
@@ -1129,7 +1171,7 @@ function finishImport(text, cards, notFound) {
   let deck = null;
   let saveErr = '';
   if (wantSave) {
-    try { deck = saveDeck({ id: opts.editId, name, text, cards }); } catch { saveErr = ' This device has no room left to save it.'; }
+    try { deck = saveDeck({ id: opts.editId, name, text, cards, colors }); } catch { saveErr = ' This device has no room left to save it.'; }
   }
   const missed = notFound.length ? ` Not found: ${notFound.join(', ')}` : '';
   if (opts.mode === 'landing') {
@@ -1286,9 +1328,11 @@ async function importDeck(text) {
   }
   const notFound = [];
   const cards = [];
+  const colors = new Set();
   entries.forEach((e, i) => {
     const sc = resolved.get(i);
     if (!sc) return notFound.push(e.name);
+    for (const c of sc.color_identity || []) colors.add(c);
     const im = imagesOf(sc);
     // Keep the name the player knows it by, with the real name alongside when they differ.
     const alt = norm(e.name) !== norm(sc.name) && !norm(sc.name).startsWith(norm(e.name) + ' //');
@@ -1296,7 +1340,7 @@ async function importDeck(text) {
     for (let k = 0; k < e.qty; k++) cards.push({ name, img: im.img, back: im.back, commander: e.commander });
   });
   $('#deckLoad').disabled = false;
-  finishImport(text, cards, notFound);
+  finishImport(text, cards, notFound, sortColors(colors));
 }
 
 // ---------- Top bar ----------

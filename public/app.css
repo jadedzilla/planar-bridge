@@ -508,3 +508,20 @@ html, body { background: var(--table); }
 .landing.decks-hidden .deck-tab .caret { transform: rotate(180deg); }
 @media (max-width: 600px) { .landing { --drawer-h: 268px; } }
 @media (prefers-reduced-motion: reduce) { .deck-drawer, .landing { transition: none; } }
+
+/* --- Colour pips in a deck's top-left corner --- */
+.deck-pips { position: absolute; top: -6px; left: -7px; z-index: 2; display: flex; flex-direction: column; gap: 2px; }
+.pip {
+  --pip: #cfc8b4; --ink: #2a2620;
+  display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%;
+  font-size: 10px; font-weight: 700; line-height: 1; color: var(--ink);
+  background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--pip) 70%, #fff), var(--pip) 70%);
+  box-shadow: 0 0 0 1.5px #1d2026, 0 1px 2px rgba(0,0,0,.45);
+}
+.pip-W { --pip: #f3ecd0; }
+.pip-U { --pip: #8fc0e6; --ink: #13324a; }
+.pip-B { --pip: #8f8580; --ink: #f1ece9; }
+.pip-R { --pip: #e88a68; --ink: #4a1608; }
+.pip-G { --pip: #8fbf8b; --ink: #173a16; }
+.pip-C { --pip: #c9c6c2; }
+@media (max-width: 600px) { .pip { width: 16px; height: 16px; font-size: 9px; } }
