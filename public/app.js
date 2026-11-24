@@ -871,6 +871,46 @@ async function scryfallCollection(identifiers) {
   return res.json();
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const norm = (s) => String(s || '').toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, ' ').trim();
+
+// Every name a deckbuilder might use for this printing: the real name, each face,
+// and alternate printed names such as Godzilla series names ("flavor names").
+function namesOf(card) {
+  const out = [card.name, card.flavor_name, card.printed_name];
+  for (const f of card.card_faces || []) out.push(f.name, f.flavor_name, f.printed_name);
+  return out.filter(Boolean).map(norm);
+}
+function cardMatches(card, wanted) {
+  const w = norm(wanted);
+  return namesOf(card).includes(w) || norm(card.name).startsWith(w.split(' // ')[0] + ' //');
+}
+
+// Last resort for one name: Scryfall search across all printings, keeping only
+// a result whose real or alternate name matches exactly.
+async function scryfallLookupOne(name) {
+  const queries = [
+    `!"${name.replace(/"/g, '')}" unique:prints include:extras`,
+    `"${name.replace(/"/g, '')}" unique:prints include:extras`,
+  ];
+  for (const q of queries) {
+    const res = await fetch('https://api.scryfall.com/cards/search?q=' + encodeURIComponent(q), { headers: { Accept: 'application/json' } });
+    await sleep(120);
+    if (res.status === 404) continue;
+    if (!res.ok) throw new Error('Scryfall returned ' + res.status);
+    const data = await res.json();
+    const hit = (data.data || []).find((c) => cardMatches(c, name));
+    if (hit) return hit;
+  }
+  const res = await fetch('https://api.scryfall.com/cards/named?fuzzy=' + encodeURIComponent(name), { headers: { Accept: 'application/json' } });
+  await sleep(120);
+  if (res.ok) {
+    const c = await res.json();
+    if (cardMatches(c, name)) return c;
+  }
+  return null;
+}
+
 async function importDeck(text) {
   const status = $('#deckStatus');
   const entries = parseDeck(text);
@@ -878,54 +918,57 @@ async function importDeck(text) {
   try { localStorage.setItem('ps:deck', text); } catch {}
   $('#deckLoad').disabled = true;
   status.textContent = 'Looking up cards on Scryfall…';
-  const notFound = [];
   const resolved = new Map(); // entry index -> scryfall card
   try {
+    // Pass 1: exact printing when the list gives set + collector number, otherwise by name.
     // Scryfall accepts up to 75 identifiers per request.
     for (let i = 0; i < entries.length; i += 75) {
       const chunk = entries.slice(i, i + 75);
       const ids = chunk.map((e) => (e.set && e.num ? { set: e.set, collector_number: e.num } : { name: e.name.split(' // ')[0] }));
       const data = await scryfallCollection(ids);
       const found = data.data || [];
-      // Results come back in request order with missing ones skipped; match them back up.
-      let fi = 0;
       chunk.forEach((e, j) => {
-        const card = found[fi];
         const want = ids[j];
-        const matches = card && (want.name
-          ? card.name.toLowerCase() === want.name.toLowerCase() || card.name.toLowerCase().startsWith(want.name.toLowerCase() + ' //')
-          : card.set === want.set && String(card.collector_number) === String(want.collector_number));
-        if (matches) { resolved.set(i + j, card); fi++; }
-        else if (want.set) {
-          // Set/number not found: retry by name below.
-          e.set = null; e.num = null;
-          e.retry = true;
-        } else notFound.push(e.name);
+        const card = want.name
+          ? found.find((c) => cardMatches(c, want.name) || cardMatches(c, e.name))
+          : found.find((c) => c.set === want.set && String(c.collector_number).toLowerCase() === String(want.collector_number).toLowerCase());
+        if (card) resolved.set(i + j, card);
       });
-      if (i + 75 < entries.length) await new Promise((r) => setTimeout(r, 550));
+      if (i + 75 < entries.length) await sleep(550);
     }
-    const retry = entries.map((e, i) => [e, i]).filter(([e]) => e.retry);
-    for (let i = 0; i < retry.length; i += 75) {
-      const chunk = retry.slice(i, i + 75);
+    // Pass 2: anything still missing, by name (e.g. a set code Scryfall doesn't know).
+    const missing = entries.map((e, i) => [e, i]).filter(([, i]) => !resolved.has(i));
+    for (let i = 0; i < missing.length; i += 75) {
+      const chunk = missing.slice(i, i + 75);
+      await sleep(550);
       const data = await scryfallCollection(chunk.map(([e]) => ({ name: e.name.split(' // ')[0] })));
-      const byName = new Map((data.data || []).map((c) => [c.name.toLowerCase(), c]));
       for (const [e, idx] of chunk) {
-        const n = e.name.toLowerCase();
-        const card = byName.get(n) || [...byName.values()].find((c) => c.name.toLowerCase().startsWith(n.split(' // ')[0] + ' //'));
-        if (card) resolved.set(idx, card); else notFound.push(e.name);
+        const card = (data.data || []).find((c) => cardMatches(c, e.name));
+        if (card) resolved.set(idx, card);
       }
+    }
+    // Pass 3: alternate names (Godzilla series and similar) need a search, one by one.
+    const still = entries.map((e, i) => [e, i]).filter(([, i]) => !resolved.has(i));
+    for (const [n, [e, idx]] of still.entries()) {
+      status.textContent = `Looking up alternate names… (${n + 1} of ${still.length})`;
+      const card = await scryfallLookupOne(e.name);
+      if (card) resolved.set(idx, card);
     }
   } catch (err) {
     $('#deckLoad').disabled = false;
     status.textContent = 'Could not reach Scryfall (' + err.message + '). Check your connection and try again.';
     return;
   }
+  const notFound = [];
   const cards = [];
   entries.forEach((e, i) => {
     const sc = resolved.get(i);
-    if (!sc) return;
+    if (!sc) return notFound.push(e.name);
     const im = imagesOf(sc);
-    for (let k = 0; k < e.qty; k++) cards.push({ name: sc.name, img: im.img, back: im.back, commander: e.commander });
+    // Keep the name the player knows it by, with the real name alongside when they differ.
+    const alt = norm(e.name) !== norm(sc.name) && !norm(sc.name).startsWith(norm(e.name) + ' //');
+    const name = alt ? `${e.name} (${sc.name})` : sc.name;
+    for (let k = 0; k < e.qty; k++) cards.push({ name, img: im.img, back: im.back, commander: e.commander });
   });
   $('#deckLoad').disabled = false;
   if (!cards.length) return (status.textContent = 'None of those cards were found on Scryfall.');
