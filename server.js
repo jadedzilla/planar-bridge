@@ -156,6 +156,8 @@ function viewFor(room, viewerId) {
     const c = room.cards.get(id);
     const base = { id: c.id, owner: c.owner };
     if (c.loc.zone === 'battlefield') Object.assign(base, { x: c.x, y: c.y, tapped: c.tapped, faceDown: c.faceDown, counters: c.counters });
+    // Lets the receiving tablet animate a card sliding in from the sender's side.
+    if (c.sentFrom && Date.now() - c.sentAt < 4000) Object.assign(base, { from: c.sentFrom, sentAt: c.sentAt });
     if (visible(c)) Object.assign(base, { name: c.name, img: c.img, back: c.back, transformed: c.transformed });
     return base;
   };
@@ -168,6 +170,7 @@ function viewFor(room, viewerId) {
       id: p.id,
       name: p.name,
       seat: p.seat,
+      pos: p.pos,
       color: SEAT_COLORS[p.seat],
       life: p.life,
       connected: p.connected,
@@ -255,6 +258,7 @@ function handle(ws, msg) {
       if (!to) return;
       const wasHidden = from.zone === 'library' || from.zone === 'hand';
       if (!placeCard(room, card, to.id, msg.toZone, { x: msg.x, y: msg.y, index: msg.index, bottom: msg.bottom, faceDown: msg.faceDown })) return;
+      if (from.player !== to.id) { card.sentFrom = from.player; card.sentAt = Date.now(); } else card.sentFrom = null;
       if (!(from.player === to.id && from.zone === msg.toZone)) {
         const fromP = player(room, from.player);
         const shownName = (msg.toZone === 'library' || msg.toZone === 'hand' || card.faceDown) && wasHidden ? 'a card' : card.name;
@@ -350,6 +354,17 @@ function handle(ws, msg) {
       addLog(room, `${me.name} reset: all their cards back in library, shuffled, life ${me.life}.`);
       break;
     }
+    case 'seat': {
+      // Move a player to another spot around the table (swapping with whoever is there).
+      const target = player(room, msg.playerId);
+      const pos = Math.trunc(Number(msg.pos));
+      if (!target || ![0, 1, 2, 3].includes(pos)) return;
+      const other = room.players.find((p) => p.pos === pos);
+      if (other) other.pos = target.pos;
+      target.pos = pos;
+      addLog(room, `${me.name} changed the seating.`);
+      break;
+    }
     case 'rename': {
       me.name = cleanStr(msg.name, 24) || me.name;
       break;
@@ -386,10 +401,15 @@ function join(ws, room, name, playerId) {
     }
     const used = new Set(room.players.map((x) => x.seat));
     const seat = [0, 1, 2, 3].find((s) => !used.has(s));
+    // Table positions go clockwise 0-3. Fill across from the first player first,
+    // so two players face each other and a third sits to the side.
+    const usedPos = new Set(room.players.map((x) => x.pos));
+    const pos = [0, 2, 1, 3].find((n) => !usedPos.has(n));
     p = {
       id: crypto.randomUUID(),
       name: cleanStr(name, 24) || `Player ${seat + 1}`,
       seat,
+      pos,
       life: room.startingLife,
       zones: emptyZones(),
       connected: true,
