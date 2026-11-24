@@ -704,13 +704,11 @@ document.addEventListener('pointermove', (e) => {
     startDrag();
   }
   e.preventDefault();
-  drag.ghost.style.left = e.clientX - drag.ox + 'px';
-  drag.ghost.style.top = e.clientY - drag.oy + 'px';
-  drag.ghost.style.setProperty('--fx', (e.clientX / innerWidth).toFixed(3));
-  drag.ghost.style.setProperty('--fy', (e.clientY / innerHeight).toFixed(3));
   const t = dropTargetAt(e.clientX, e.clientY);
   highlight(t);
   sizeGhostFor(drag, t);
+  placeGhost(drag, e.clientX, e.clientY, t);
+  spreadHand(drag, t, e.clientX);
 }, { passive: false });
 
 document.addEventListener('pointerup', (e) => {
@@ -720,6 +718,7 @@ document.addEventListener('pointerup', (e) => {
   clearTimeout(d.timer);
   if (d.started) {
     d.samples.push({ x: e.clientX, y: e.clientY, t: performance.now() });
+    spreadHand(d, null);
     if (!tryFlick(d)) finishDrag(d, e.clientX, e.clientY);
   } else onClick(d);
 });
@@ -796,7 +795,9 @@ const LIFT = 1.18;
 function sizeGhostFor(d, t) {
   const tw = cardWidthIn(t);
   if (tw) d.size = tw;
-  const s = (d.size / d.w) * LIFT;
+  // Over a pile it settles to the pile's exact size; elsewhere it's held lifted.
+  const onPile = t && t.classList.contains('pile') && commandOk(d, t);
+  const s = (d.size / d.w) * (onPile ? 1 : LIFT);
   d.scale = s;
   paintGhost(d);
 }
@@ -807,8 +808,54 @@ function sizeGhostFor(d, t) {
 // real card in the air.
 const TILT_MAX = 12; // degrees
 function paintGhost(d) {
-  const t = d.tilt || { x: 0, y: 0, z: 0 };
+  const t = d.snap ? { x: 0, y: 0, z: -2 } : d.tilt || { x: 0, y: 0, z: 0 }; // snapped: lies square in the pile
   d.ghost.style.transform = `perspective(900px) rotateX(${t.x.toFixed(2)}deg) rotateY(${t.y.toFixed(2)}deg) rotate(${(2 + t.z).toFixed(2)}deg) scale(${d.scale.toFixed(3)})`;
+}
+
+// Over a pile (graveyard, exile, library, command zone) the carried card lets go
+// of the finger and glides onto the pile's spot, square and the same size, so
+// you can see exactly where it will land. Moving off the pile glides it back.
+function placeGhost(d, x, y, t) {
+  const g = d.ghost;
+  const spot = t && t.classList.contains('pile') && t.querySelector('.spot');
+  const was = d.snap;
+  d.snap = spot && commandOk(d, t) ? spot : null;
+  if (d.snap) {
+    const r = d.snap.getBoundingClientRect();
+    // The card scales around the finger, so place it so its scaled centre sits on the spot's centre.
+    g.style.left = r.left + r.width / 2 - d.ox - d.scale * (d.w / 2 - d.ox) + 'px';
+    g.style.top = r.top + r.height / 2 - d.oy - d.scale * (d.h / 2 - d.oy) + 'px';
+  } else {
+    g.style.left = x - d.ox + 'px';
+    g.style.top = y - d.oy + 'px';
+  }
+  g.style.setProperty('--fx', (x / innerWidth).toFixed(3));
+  g.style.setProperty('--fy', (y / innerHeight).toFixed(3));
+  if (!!d.snap !== !!was || (d.snap && d.snap !== was)) {
+    // Glide for a moment when snapping on or off; otherwise follow the finger exactly.
+    g.classList.add('snapping');
+    clearTimeout(d.snapTimer);
+    if (!d.snap) d.snapTimer = setTimeout(() => g.classList.remove('snapping'), 180);
+    paintGhost(d);
+  }
+}
+
+// Carrying a card over your hand: the cards part where it would go in.
+function spreadHand(d, t, x) {
+  const hand = $('#hand');
+  const cards = [...hand.children];
+  if (!t || t.id !== 'handBar') {
+    if (hand.classList.contains('parting')) { hand.classList.remove('parting'); cards.forEach((c) => c.style.removeProperty('--dx')); }
+    return;
+  }
+  const others = cards.filter((c) => c !== d.src);
+  let idx = others.findIndex((c) => { const r = c.getBoundingClientRect(); return x < r.left + r.width / 2; });
+  if (idx < 0) idx = others.length;
+  const cw = others[0] ? others[0].offsetWidth : 70;
+  const gap = cw * 0.55;
+  hand.classList.add('parting');
+  others.forEach((c, i) => c.style.setProperty('--dx', (i < idx ? -gap / 2 : gap / 2).toFixed(1) + 'px'));
+  if (cards.includes(d.src)) d.src.style.setProperty('--dx', '0px');
 }
 function tiltLoop(d) {
   if (!d || drag !== d || !d.ghost || reduceMotion.matches) return;
@@ -844,6 +891,7 @@ function highlight(t) {
   if (t) t.classList.add('drop-hover');
 }
 function cleanupDrag(d) {
+  spreadHand(d, null);
   if (d.ghost) d.ghost.remove();
   d.src.classList.remove('dragging-src');
   highlight(null);
