@@ -537,3 +537,7 @@ html, body { background: var(--table); }
 .pip-G { --pip: #8fbf8b; --ink: #173a16; }
 .pip-C { --pip: #c9c6c2; }
 @media (max-width: 600px) { .pip { width: 16px; height: 16px; font-size: 9px; } }
+
+/* --- Command zone: one card-sized spot in the top left of the mat --- */
+.piles.command-col { order: -1; }
+.pile.command .spot { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--seat, #fff) 45%, rgba(255,255,255,.15)); }
