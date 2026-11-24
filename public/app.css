@@ -578,3 +578,9 @@ html, body { background: var(--table); }
 }
 .mat-body::before { outline: 4px solid rgba(0,0,0,.14); outline-offset: -4px; }
 .mat.has-art .mat-body::after { border-color: rgba(255,255,255,.4); opacity: .5; }
+
+/* Carried card: eases up and bigger when picked up, and between sizes as it
+   passes over the hand, the mat or a pile. Its position follows the finger directly. */
+.ghost { transition: transform .2s cubic-bezier(.2,.8,.3,1), box-shadow .2s ease; box-shadow: 0 1px 2px rgba(0,0,0,.3), 0 3px 8px rgba(0,0,0,.28); }
+.ghost.lifted { box-shadow: 0 6px 10px rgba(0,0,0,.22), 0 26px 44px rgba(0,0,0,.42); }
+@media (prefers-reduced-motion: reduce) { .ghost { transition: none; } }

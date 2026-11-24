@@ -18,6 +18,7 @@ const app = {
   focus: null, // opponent whose full playmat is open
   shuffleSeen: new Map(), // player id -> shuffle count last shown
   settled: new Map(), // card id -> time it was dropped by hand here (no glide)
+  drops: new Map(), // card id -> where it was let go, until the table catches up
   lastLife: null,
 };
 
@@ -422,7 +423,31 @@ function snapshotCards() {
 
 // Cards slide from where they were to where they are now, instead of jumping.
 // Cards new to my hand while my library shrank are drawn: they come off the deck.
+// Cards just let go of: glide from the release point into place, then drop the ghost.
+function settleDrops() {
+  for (const [id, dp] of app.drops) {
+    app.drops.delete(id);
+    app.settled.set(id, performance.now());
+    const el = app.cardEls.get(id) || dp.src;
+    dp.ghost.remove();
+    dp.src.classList.remove('dragging-src');
+    dp.src.style.visibility = '';
+    el.style.visibility = '';
+    if (!el.isConnected || reduceMotion.matches || !el.animate) continue;
+    const r = el.getBoundingClientRect();
+    const dx = dp.x - (r.left + r.width / 2);
+    const dy = dp.y - (r.top + r.height / 2);
+    const s = el.offsetWidth ? dp.w / el.offsetWidth : 1;
+    const turn = dp.rot - cardTurn(el);
+    el.animate([
+      { translate: `${dx}px ${dy}px`, scale: String(s), rotate: `${turn}deg`, zIndex: 50 },
+      { translate: '0px 0px', scale: '1', rotate: '0deg', zIndex: 50 },
+    ], { duration: 260, easing: 'cubic-bezier(.2,.8,.25,1)' });
+  }
+}
+
 function glideCards(before, mine) {
+  settleDrops();
   if (reduceMotion.matches || !Element.prototype.animate) return;
   const now = performance.now();
   for (const [id, t] of app.settled) if (now - t > 1200) app.settled.delete(id);
@@ -579,9 +604,11 @@ document.addEventListener('pointermove', (e) => {
     startDrag();
   }
   e.preventDefault();
-  drag.ghost.style.left = e.clientX - drag.offX + 'px';
-  drag.ghost.style.top = e.clientY - drag.offY + 'px';
-  highlight(dropTargetAt(e.clientX, e.clientY));
+  drag.ghost.style.left = e.clientX - drag.ox + 'px';
+  drag.ghost.style.top = e.clientY - drag.oy + 'px';
+  const t = dropTargetAt(e.clientX, e.clientY);
+  highlight(t);
+  sizeGhostFor(drag, t);
 }, { passive: false });
 
 document.addEventListener('pointerup', (e) => {
@@ -618,11 +645,55 @@ function startDrag() {
   ghost.classList.remove('tapped');
   ghost.style.width = drag.w + 'px';
   ghost.style.height = drag.h + 'px';
+  // Start exactly where the card lies (same size and turn), with the pointer as the
+  // pivot, so picking it up lifts and straightens it instead of jumping.
+  const r = drag.src.getBoundingClientRect();
+  const gx = r.left + r.width / 2 - drag.w / 2;
+  const gy = r.top + r.height / 2 - drag.h / 2;
+  drag.ox = drag.sx - gx; drag.oy = drag.sy - gy;
+  ghost.style.left = drag.x - drag.ox + 'px';
+  ghost.style.top = drag.y - drag.oy + 'px';
+  ghost.style.transformOrigin = `${drag.ox}px ${drag.oy}px`;
+  drag.rot0 = cardTurn(drag.src);
+  ghost.style.transform = `rotate(${drag.rot0}deg)`;
   document.body.appendChild(ghost);
   drag.ghost = ghost;
+  drag.size = drag.w;
+  void ghost.offsetWidth;
+  ghost.classList.add('lifted');
+  sizeGhostFor(drag, null);
   drag.src.classList.add('dragging-src');
   // Dragging from inside a pile viewer: close the sheet so the table is reachable.
   if (drag.src.closest('#sheet')) closeSheet();
+}
+
+// How far a card is turned where it lies: tapped, or fanned in the hand.
+function cardTurn(el) {
+  if (el.classList.contains('tapped')) return 90;
+  if (el.closest('#hand')) return parseFloat(el.style.getPropertyValue('--rot')) || 0;
+  return 0;
+}
+
+// The size a card has in a given area, so a carried card can match it.
+function cardWidthIn(t) {
+  if (!t) return null;
+  if (t.id === 'handBar') return parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hand-cw')) || null;
+  const spot = t.querySelector && t.querySelector('.spot');
+  if (spot) return spot.offsetWidth;
+  const mat = t.closest('.mat');
+  if (mat) return parseFloat(mat.style.getPropertyValue('--card-w')) || null;
+  return null;
+}
+
+// A carried card is held a little bigger than it lies (lifted toward you), and
+// eases to the size of whatever area it's over.
+const LIFT = 1.18;
+function sizeGhostFor(d, t) {
+  const tw = cardWidthIn(t);
+  if (tw) d.size = tw;
+  const s = (d.size / d.w) * LIFT;
+  d.scale = s;
+  d.ghost.style.transform = `rotate(2deg) scale(${s.toFixed(3)})`;
 }
 
 function dropTargetAt(x, y) {
@@ -687,7 +758,8 @@ function sendFlick(d, to, vx, vy) {
     d.src.style.visibility = '';
   };
   if (g.animate) {
-    g.animate([{ transform: 'rotate(3deg) scale(1.05)' }, { transform: `translate(${tx}px, ${ty}px) rotate(${vx > 0 ? 40 : -40}deg) scale(0.9)` }],
+    g.style.transition = 'none';
+    g.animate([{ transform: g.style.transform }, { transform: `translate(${tx}px, ${ty}px) rotate(${vx > 0 ? 40 : -40}deg) scale(${(d.scale * 0.85).toFixed(3)})` }],
       { duration: 380, easing: 'cubic-bezier(.3,.6,.4,1)', fill: 'forwards' }).onfinish = finish;
   } else finish();
   const spot = landingSpot(me(), to);
@@ -695,12 +767,47 @@ function sendFlick(d, to, vx, vy) {
   toast(`Sent to ${to.name}`);
 }
 
+// Put a carried card back where it came from, smoothly (nowhere to drop it).
+function returnGhost(d) {
+  highlight(null);
+  const g = d.ghost;
+  if (!g || !g.animate || reduceMotion.matches) return cleanupDrag(d);
+  const r = d.src.getBoundingClientRect();
+  const gx = r.left + r.width / 2 - d.w / 2;
+  const gy = r.top + r.height / 2 - d.h / 2;
+  g.style.transition = 'none';
+  g.animate([
+    { transform: g.style.transform },
+    { transform: `translate(${gx - parseFloat(g.style.left)}px, ${gy - parseFloat(g.style.top)}px) rotate(${d.rot0}deg) scale(1)` },
+  ], { duration: 260, easing: 'cubic-bezier(.3,.7,.3,1)', fill: 'forwards' }).onfinish = () => cleanupDrag(d);
+}
+
+// Hand the carried card over to the real one: remember where (and how big and
+// turned) it was let go, so the real card glides from there into its new spot.
+function releaseGhost(d) {
+  highlight(null);
+  const g = d.ghost;
+  const r = g.getBoundingClientRect();
+  const drop = { x: r.left + r.width / 2, y: r.top + r.height / 2, w: d.w * d.scale, rot: 2, ghost: g, src: d.src, t: performance.now() };
+  d.src.style.visibility = 'hidden';
+  app.drops.set(d.id, drop);
+  // If no table update arrives (e.g. the move was refused), settle back anyway.
+  setTimeout(() => { if (app.drops.get(d.id) === drop) { app.drops.delete(d.id); d.src.style.visibility = ''; returnGhost(d); } }, 1500);
+}
+
 function finishDrag(d, x, y) {
   const target = dropTargetAt(x, y);
-  cleanupDrag(d);
-  if (target && !commandOk(d, target)) return toast('Only your commander goes in your command zone.');
-  app.settled.set(d.id, performance.now());
+  if (!target || d.fromLibrary) {
+    if (!target) return returnGhost(d);
+    cleanupDrag(d);
+  } else if (!commandOk(d, target)) {
+    returnGhost(d);
+    return toast('Only your commander goes in your command zone.');
+  } else releaseGhost(d);
   if (!target) return;
+  // Where the card's top-left lands, at the size it will have there.
+  const k = (cardWidthIn(target) || d.w) / d.w;
+  d.offX = d.ox * k; d.offY = d.oy * k;
   const toZone = target.dataset.zone;
   const toPlayer = target.dataset.player;
   const msg = { type: 'move', cardId: d.id, toPlayer, toZone };
@@ -718,6 +825,7 @@ function finishDrag(d, x, y) {
       d.src.style.left = msg.x * 100 + '%';
       d.src.style.top = msg.y * 100 + '%';
       target.appendChild(d.src);
+      settleDrops();
     }
   }
   if (toZone === 'hand' && target.id === 'handBar') {
