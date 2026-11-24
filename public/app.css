@@ -246,8 +246,10 @@ html, body { background: var(--table); }
   --cloth: color-mix(in srgb, var(--seat, #4a7a68) 9%, #262a31);
   border-radius: 20px;
   background:
+    var(--cloth-grain) 0 0 / 180px 180px,
     radial-gradient(ellipse 75% 65% at 50% 30%, rgba(255,255,255,.05), transparent 70%),
     var(--cloth);
+  background-blend-mode: soft-light, normal, normal;   /* fine fabric grain, as on picture mats */
   box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, 0 -1px 0 rgba(0,0,0,.25) inset, 0 1px 1px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.35);
 }
 .mat-body > * { position: relative; z-index: 1; }
@@ -548,6 +550,11 @@ html, body { background: var(--table); }
    not a flat photo. The grain is an SVG noise filter, drawn in code. */
 :root {
   --mat-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.95' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='.33 .33 .33 0 0  .33 .33 .33 0 0  .33 .33 .33 0 0  0 0 0 0 1'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  /* the same grain shifted down to average neutral grey, so on the plain mat it
+     adds texture without lightening the cloth */
+  --cloth-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.95' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='.33 .33 .33 0 -.29  .33 .33 .33 0 -.29  .33 .33 .33 0 -.29  0 0 0 0 1'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  /* the same grain shifted down to average neutral grey, so on the plain mat it
+     adds texture without lightening the cloth */
   --mat-edge-light: radial-gradient(ellipse 85% 80% at 50% 45%, transparent 60%, rgba(0,0,0,.28));
 }
 .mat.has-art .mat-body::before {
@@ -608,8 +615,9 @@ html, body { background: var(--table); }
   border-radius: var(--r);
   padding: var(--w);
   background:
-    /* fabric grain on picture mats (see below); a blank layer otherwise */
-    var(--tape-grain, linear-gradient(transparent 0 0)) 0 0 / 180px 180px,
+    /* the same fabric grain as the cloth, on the same 180px grid so it
+       carries straight on across the binding (soft-light, see below) */
+    var(--tape-grain, var(--cloth-grain)) 0 0 / 180px 180px,
     /* stitch rows, running clockwise; each straight row starts on a stitch
        where it leaves a corner */
     repeating-linear-gradient(90deg, var(--stitch-x)) var(--r) var(--s1) / var(--side) var(--sh),
@@ -634,7 +642,10 @@ html, body { background: var(--table); }
     radial-gradient(circle at 100% 0, transparent var(--inner), var(--roll-c)) left bottom / var(--r) var(--r),
     radial-gradient(circle at 0 0, transparent var(--inner), var(--roll-c)) right bottom / var(--r) var(--r),
     var(--bind-base, var(--bind));
-  background-repeat: no-repeat;
+  /* these lists cycle if short, so spell out every layer (picture mats have
+     the most): grain first, then the rest. */
+  background-repeat: repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat;
+  background-blend-mode: soft-light, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal;
   /* only the ring around the rim shows */
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
@@ -649,12 +660,7 @@ html, body { background: var(--table); }
    under it, a touch darker, as if the print wraps round the edge. */
 .mat.has-art .mat-body::after {
   --bind-base: linear-gradient(rgba(0,0,0,.22), rgba(0,0,0,.32)), var(--mat-img) center / cover no-repeat, var(--bind);
-  /* the same fabric grain as the cloth, on the same 180px grid so it carries
-     straight on across the binding; soft-light on the top layer only */
   --tape-grain: var(--mat-grain);
-  /* these lists cycle if short, so spell out every layer: grain first, then the rest */
-  background-repeat: repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat;
-  background-blend-mode: soft-light, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal;
 }
 @media (max-width: 600px) {
   .mat-body::after {
