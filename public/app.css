@@ -555,7 +555,7 @@ html, body { background: var(--table); }
      soft-light blend keeps the plain mat and picture mats at their colour. */
   --fabric: url("fabric.jpg");
   --fabric-art: url("fabric-art.jpg");
-  --fabric-size: 27px 31px;
+  --fabric-size: 18px 21px;
   --mat-edge-light: radial-gradient(ellipse 85% 80% at 50% 45%, transparent 60%, rgba(0,0,0,.28));
 }
 .mat.has-art .mat-body::before {
