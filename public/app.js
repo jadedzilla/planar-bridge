@@ -524,8 +524,8 @@ function watchTilt() {
   }
 }
 
-// Every tablet keeps both faces of each card it can see, and every card back
-// at the table, loaded and decoded ahead of time. Then a flip, transform or
+// Every tablet keeps both faces of each card on the playmats (battlefields),
+// and every card back at the table, loaded and decoded ahead of time. Then a flip, transform or
 // turn face up/down shows the new side straight away instead of popping in.
 // (A face-down card's front is hidden from other players, so theirs can only
 // load once it's turned up.)
@@ -537,11 +537,9 @@ function preloadTableImages() {
   const want = new Set([OFFICIAL_BACK]);
   for (const p of s.players) {
     if (p.cardBack) want.add(new URL(backUrl(p), location.href).href);
-    for (const list of Object.values(p.zones || {})) {
-      for (const c of list || []) {
-        if (c.img) want.add(c.img);
-        if (c.back) want.add(c.back);
-      }
+    for (const c of (p.zones && p.zones.battlefield) || []) {
+      if (c.img) want.add(c.img);
+      if (c.back) want.add(c.back);
     }
   }
   for (const url of want) {
@@ -552,7 +550,7 @@ function preloadTableImages() {
     if (im.decode) im.decode().catch(() => {});
     preloaded.set(url, im);
   }
-  // Let go of cards that have left the table (back in a library, or a new deck).
+  // Let go of cards that have left the playmats (hand, graveyard, library, a new deck).
   for (const url of preloaded.keys()) if (!want.has(url)) preloaded.delete(url);
 }
 
