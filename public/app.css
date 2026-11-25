@@ -169,6 +169,8 @@ button { font: inherit; color: inherit; }
 .game.hand-hidden .hud-bl { bottom: 14px; }
 .hud .code-chip { background: rgba(20,23,28,.75); border: 1px dashed var(--line); border-radius: 8px; padding: 6px 10px; cursor: pointer; }
 .hud .code-chip b { letter-spacing: 2px; }
+.hud .code-chip { display: inline-flex; align-items: center; gap: 6px; }
+.hud .code-chip .link-icon { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; opacity: .7; }
 .btn.round { border-radius: 10px; height: 34px; padding: 0 12px; background: rgba(38,43,52,.9); touch-action: manipulation; }
 .me-life button { width: 46px; height: 42px; border-radius: 10px; border: 1px solid var(--line); background: #11141a; font-size: 22px; cursor: pointer; touch-action: manipulation; }
 .me-life .val { min-width: 66px; text-align: center; font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; }
