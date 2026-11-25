@@ -295,23 +295,16 @@ function playFocus(id, opening, done) {
   const mat = area.firstElementChild;
   const p = playerById(id);
   const band = p && $(`.edge[data-player="${p.id}"]`);
-  if (reduceMotion.matches || !mat || !band || !area.animate) { done && done(); return; }
+  if (reduceMotion.matches || !mat || !band) { done && done(); return; }
   const rel = relOf(p);
   const F = area.getBoundingClientRect();
   const E = band.getBoundingClientRect();
   const bs = getComputedStyle(band);
-  const out = -60; // past the playmat's edge, so its shadow isn't cut off
   // Clip that matches the band exactly (insets may reach outside the playmat)
   const px = (v) => `${v.toFixed(1)}px`;
   const radii = (r) => r.map(px).join(' ');
   const bandR = ['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft'].map((c) => parseFloat(bs[`border${c}Radius`]) || 0);
   const shape = (ins, r) => `inset(${ins.map(px).join(' ')} round ${radii(r)})`;
-  const from = shape([E.top - F.top, F.right - E.right, F.bottom - E.bottom, E.left - F.left], bandR);
-  const to = shape([0, 0, 0, 0], [12, 12, 12, 12]);
-  // The board moves as one piece with the band: its far edge rides the
-  // band's outer edge the whole way, like a drawer being pulled out.
-  const slide = rel === 2 ? `translateY(${px(E.bottom - F.bottom)})`
-    : rel === 1 ? `translateX(${px(E.right - F.right)})` : `translateX(${px(E.left - F.left)})`;
 
   // A copy of the band's surface laid over the board, fading as it opens up
   const cover = document.createElement('div');
@@ -338,31 +331,34 @@ function playFocus(id, opening, done) {
   const dx = F.width / 2 - (E.left + E.width / 2 - F.left);
   const dy = F.height / 2 - (E.top + E.height / 2 - F.top);
 
-  // One curve and one clock for every part, so it all moves together
-  const timing = opening
-    ? { duration: 560, easing: 'cubic-bezier(.32, .72, 0, 1)', fill: 'both' }
-    : { duration: 440, easing: 'cubic-bezier(.32, .72, 0, 1)', fill: 'both', direction: 'reverse' };
-  area.classList.add('animating');
-  const anims = [
-    area.animate([{ clipPath: from }, { clipPath: to }], timing),
-    mat.animate([{ transform: slide }, { transform: 'none' }], timing),
-    cover.animate([{ opacity: 1 }, { opacity: 1, offset: 0.08 }, { opacity: 0, offset: 0.6 }, { opacity: 0 }], timing),
-    tab.animate([{ transform: 'none', opacity: 1 }, { opacity: 0, offset: 0.35 }, { transform: `translate(${px(dx)}, ${px(dy)})`, opacity: 0 }], timing),
-  ];
-  focusAnim = anims[0];
-  // The picture on the board fills the part of the board that is showing,
-  // and the band's fading copy fills the opening, so neither jumps. Their
-  // paths aren't straight lines, so they're sampled into keyframes that run
-  // on the same clock (and the compositor) as everything else.
-  if (art) {
-    const sx = rel === 2 ? 0 : (rel === 1 ? E.right - F.right : E.left - F.left);
-    const sy = rel === 2 ? E.bottom - F.bottom : 0;
-    const lerp = (a, b, k) => a + (b - a) * k;
-    const ease = cubicBezier(0.32, 0.72, 0, 1);
-    const boardFrames = [], bandFrames = [];
-    const N = 30;
-    for (let i = 0; i <= N; i++) {
-      const k = ease(i / N);
+  // Every part is set from one progress value on each frame. (Browsers run
+  // transform and opacity animations on another thread from clip-path ones,
+  // so separate animations drift apart and leave gaps at the edges.)
+  const duration = opening ? 560 : 440;
+  const ease = cubicBezier(0.32, 0.72, 0, 1);
+  const lerp = (a, b, k) => a + (b - a) * k;
+  const fromIns = [E.top - F.top, F.right - E.right, F.bottom - E.bottom, E.left - F.left];
+  // The board moves as one piece with the band: its far edge rides the
+  // band's outer edge the whole way, like a drawer being pulled out.
+  const sx = rel === 2 ? 0 : (rel === 1 ? E.right - F.right : E.left - F.left);
+  const sy = rel === 2 ? E.bottom - F.bottom : 0;
+  // opacity at progress k, from [k, value] stops
+  const ramp = (stops, k) => {
+    for (let i = 1; i < stops.length; i++) {
+      const [k0, v0] = stops[i - 1], [k1, v1] = stops[i];
+      if (k <= k1) return lerp(v0, v1, (k - k0) / (k1 - k0 || 1));
+    }
+    return stops[stops.length - 1][1];
+  };
+  const apply = (k) => {
+    area.style.clipPath = shape(fromIns.map((v) => lerp(v, 0, k)), bandR.map((r) => lerp(r, 12, k)));
+    mat.style.transform = `translate(${px(sx * (1 - k))}, ${px(sy * (1 - k))})`;
+    cover.style.opacity = ramp([[0, 1], [0.08, 1], [0.6, 0], [1, 0]], k).toFixed(3);
+    tab.style.opacity = ramp([[0, 1], [0.35, 0], [1, 0]], k).toFixed(3);
+    tab.style.transform = `translate(${px(dx * k)}, ${px(dy * k)})`;
+    if (art) {
+      // the picture on the board fills the part of the board that is showing,
+      // and the band's fading copy fills the opening, so neither jumps
       const open = { x: lerp(Er.x, 0, k), y: lerp(Er.y, 0, k) };
       open.w = lerp(Er.x + Er.w, F.width, k) - open.x;
       open.h = lerp(Er.y + Er.h, F.height, k) - open.y;
@@ -371,26 +367,37 @@ function playFocus(id, opening, done) {
       const x1 = Math.min(S.x + S.w, open.x + open.w), y1 = Math.min(S.y + S.h, open.y + open.h);
       const seen = x1 - x0 > 1 && y1 - y0 > 1 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : S;
       const r = art.fit(seen);
-      boardFrames.push({ offset: i / N, transform: art.surface.at({ x: r.x - S.x, y: r.y - S.y, w: r.w, h: r.h }) });
-      bandFrames.push({ offset: i / N, transform: art.band.at(art.fit(open)) });
+      art.surface.pic.style.transform = art.surface.at({ x: r.x - S.x, y: r.y - S.y, w: r.w, h: r.h });
+      art.band.pic.style.transform = art.band.at(art.fit(open));
     }
-    const linear = { ...timing, easing: 'linear' };
-    anims.push(art.surface.pic.animate(boardFrames, linear), art.band.pic.animate(bandFrames, linear));
-    // hold on the first frame until the pictures are ready to draw
-    anims.forEach((a) => a.pause());
-    Promise.race([art.ready, new Promise((r) => setTimeout(r, 150))]).then(() => anims.forEach((a) => a.play()));
-  }
-  Promise.all(anims.map((a) => a.finished)).catch(() => {}).then(() => {
+  };
+  area.classList.add('animating');
+  apply(opening ? 0 : 1);
+
+  const finish = () => {
     // leave the closed board hidden behind the band before taking the clip off
     if (!opening) area.hidden = true;
     area.classList.remove('animating');
+    area.style.clipPath = '';
+    mat.style.transform = '';
     if (art) { art.surface.el.remove(); art.body.classList.remove('art-moving'); }
     cover.remove();
     tab.remove();
-    anims.forEach((a) => a.cancel());
     focusAnim = null;
     done && done();
-  });
+  };
+  focusAnim = { finish };
+  let start = 0;
+  const frame = (now) => {
+    if (!start) start = now;
+    const t = Math.min(1, (now - start) / duration);
+    apply(ease(opening ? t : 1 - t));
+    if (t < 1) requestAnimationFrame(frame);
+    else finish();
+  };
+  // pictures are decoded first so they never draw blank mid-way
+  Promise.race([art ? art.ready : null, new Promise((r) => setTimeout(r, art ? 150 : 0))])
+    .then(() => requestAnimationFrame(frame));
 }
 
 function updateEdge(el, p, rel) {
