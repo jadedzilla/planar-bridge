@@ -212,9 +212,66 @@ function matFor(p) {
   return mat;
 }
 
+// Opening another player's playmat pulls it out from under their band: the
+// board slides out from that edge while the opening widens from the band's
+// size to the full playmat. Closing plays the same motion backwards.
+let focusAnim = null;
 function setFocus(id) {
-  app.focus = app.focus === id ? null : id;
+  if (focusAnim) return;
+  const prev = app.focus;
+  const next = prev === id ? null : id;
+  if (prev) {
+    playFocus(prev, false, () => { app.focus = next; render(); if (next) playFocus(next, true); });
+    return;
+  }
+  app.focus = next;
   render();
+  if (next) playFocus(next, true);
+}
+
+function playFocus(id, opening, done) {
+  const area = $('#focusArea');
+  const mat = area.firstElementChild;
+  const p = playerById(id);
+  const band = p && $(`.edge[data-player="${p.id}"]`);
+  if (reduceMotion.matches || !mat || !band || !area.animate) { done && done(); return; }
+  const rel = relOf(p);
+  const F = area.getBoundingClientRect();
+  const E = band.getBoundingClientRect();
+  const out = -60; // past the playmat's edge, so its shadow isn't cut off
+  const clamp = (v, max) => Math.max(0, Math.min(v, max));
+  // Clip insets (top right bottom left) that start the opening at the band
+  let from, slide;
+  if (rel === 2) {
+    from = [0, clamp(F.right - E.right, F.width / 2 - 20), out, clamp(E.left - F.left, F.width / 2 - 20)];
+    slide = 'translateY(-100%)';
+  } else {
+    const top = clamp(E.top - F.top, F.height - 60);
+    const bottom = clamp(F.bottom - E.bottom, F.height - top - 40);
+    from = rel === 1 ? [top, out, bottom, 0] : [top, 0, bottom, out];
+    slide = rel === 1 ? 'translateX(-100%)' : 'translateX(100%)';
+  }
+  // the edge the board slides out from stays clipped until it has arrived
+  const near = rel === 2 ? 0 : rel === 1 ? 3 : 1;
+  const mid = [out, out, out, out]; mid[near] = 0;
+  const inset = (v) => `inset(${v.map((n) => `${n}px`).join(' ')} round 12px)`;
+  const clip = [{ clipPath: inset(from) }, { clipPath: inset(mid), offset: 0.97 }, { clipPath: inset([out, out, out, out]) }];
+  const move = [{ transform: slide }, { transform: 'none' }];
+  const timing = opening
+    ? { duration: 420, easing: 'cubic-bezier(.2, .8, .2, 1)' }
+    : { duration: 340, easing: 'cubic-bezier(.3, .7, .3, 1)', direction: 'reverse' };
+  area.classList.add('animating');
+  const a = area.animate(clip, timing);
+  const b = mat.animate(move, timing);
+  focusAnim = a;
+  Promise.all([a.finished, b.finished]).catch(() => {}).then(() => {
+    // leave the closed board covered until it is hidden, so it can't flash back
+    if (!opening) area.hidden = true;
+    area.classList.remove('animating');
+    a.cancel(); b.cancel();
+    focusAnim = null;
+    done && done();
+  });
 }
 
 function updateEdge(el, p, rel) {

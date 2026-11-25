@@ -152,6 +152,9 @@ button { font: inherit; color: inherit; }
 /* Another player's playmat, opened from their band */
 .focus-area { position: absolute; z-index: 35; left: var(--edge); right: var(--edge); top: var(--edge); height: 52%; display: flex; box-shadow: 0 16px 40px rgba(0,0,0,.6); border-radius: 12px; }
 .focus-area > .mat { flex: 1; }
+/* while it slides open or shut the shadow travels with the board */
+.focus-area.animating { box-shadow: none; pointer-events: none; }
+.focus-area.animating > .mat { box-shadow: 0 16px 40px rgba(0,0,0,.6); will-change: transform; }
 .mat-close { margin-left: 6px; }
 
 /* Corner controls */
