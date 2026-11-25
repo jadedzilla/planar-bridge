@@ -55,6 +55,9 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=86400' });
     return res.end(pl.cardBack);
   }
+  // Custom card art a player brought with their deck: /art/<code>/<player id>/<art id>
+  const am = p.match(/^\/art\/([A-Z0-9]{5})\/([\w-]{1,64})\/([\w-]{1,40})$/);
+  if (am) return artRoute(req, res, am[1], am[2], am[3]);
   if (p === '/' || p.startsWith('/s/')) p = '/index.html';
   const file = path.normalize(path.join(PUBLIC, p));
   if (!file.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
@@ -64,6 +67,58 @@ const server = http.createServer((req, res) => {
     res.end(data);
   });
 });
+
+// Card art is uploaded over HTTP before the deck is loaded (one picture per
+// request, so a big deck never has to fit in one socket message). Pictures
+// are kept in memory with the session, like playmats, and only for cards in
+// the deck that player has loaded.
+const ART_MAX_BYTES = 200 * 1024; // one card picture, already shrunk on the device
+const ART_MAX_PER_PLAYER = 250;
+const ART_MAX_TOTAL = 16 * 1024 * 1024; // per player, about 100 cards of art
+function artRoute(req, res, code, playerId, artId) {
+  const room = rooms.get(code);
+  const pl = room && player(room, playerId);
+  const art = pl && pl.art && pl.art.get(artId);
+  if (req.method === 'GET' || req.method === 'HEAD') {
+    if (!art) { res.writeHead(404); return res.end(); }
+    // An art id never changes picture, so it can be cached for good.
+    res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': art.length, 'Cache-Control': 'private, max-age=31536000, immutable' });
+    return res.end(req.method === 'HEAD' ? undefined : art);
+  }
+  if (req.method !== 'POST' || !pl) { res.writeHead(pl ? 405 : 404); return res.end(); }
+  if (art) { res.writeHead(204); return res.end(); }
+  const chunks = [];
+  let size = 0;
+  req.on('data', (c) => {
+    size += c.length;
+    if (size > ART_MAX_BYTES) { res.writeHead(413); res.end(); req.destroy(); return; }
+    chunks.push(c);
+  });
+  req.on('error', () => {});
+  req.on('end', () => {
+    if (size > ART_MAX_BYTES) return;
+    const buf = Buffer.concat(chunks);
+    if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) { res.writeHead(415); return res.end(); }
+    pl.art = pl.art || new Map();
+    const full = () => pl.art.size >= ART_MAX_PER_PLAYER
+      || [...pl.art.values()].reduce((n, b) => n + b.length, 0) + buf.length > ART_MAX_TOTAL;
+    if (full()) {
+      // Make room by dropping pictures the deck on the table doesn't use
+      // (left over from a deck loaded earlier).
+      const inUse = new Set();
+      for (const c of room.cards.values()) if (c.owner === pl.id) { inUse.add(c.art); inUse.add(c.artBack); }
+      for (const id of [...pl.art.keys()]) if (!inUse.has(id)) pl.art.delete(id);
+    }
+    if (full()) { res.writeHead(507); return res.end(); }
+    pl.art.set(artId, buf);
+    room.touched = Date.now();
+    res.writeHead(201);
+    res.end();
+  });
+}
+function artPath(room, c, artId) {
+  return `/art/${room.code}/${encodeURIComponent(c.owner)}/${encodeURIComponent(artId)}`;
+}
 
 // ---------- Room state ----------
 const rooms = new Map();
@@ -179,6 +234,15 @@ function removeOwnedCards(room, ownerId) {
   }
 }
 
+// The pictures for each side of a card: the owner's custom art if they brought
+// some, otherwise Scryfall's. A double-faced card keeps its second face either way.
+function faces(room, c) {
+  return {
+    img: c.art ? artPath(room, c, c.art) : c.img,
+    back: c.artBack ? artPath(room, c, c.artBack) : c.back,
+  };
+}
+
 // What a given viewer is allowed to see.
 function viewFor(room, viewerId) {
   const visible = (card) => {
@@ -195,7 +259,7 @@ function viewFor(room, viewerId) {
     if (c.loc.zone === 'battlefield') Object.assign(base, { x: c.x, y: c.y, tapped: c.tapped, faceDown: c.faceDown, counters: c.counters });
     // Lets the receiving tablet animate a card sliding in from the sender's side.
     if (c.sentFrom && Date.now() - c.sentAt < 4000) Object.assign(base, { from: c.sentFrom, sentAt: c.sentAt });
-    if (visible(c)) Object.assign(base, { name: c.name, img: c.img, back: c.back, transformed: c.transformed, finish: c.finish || undefined });
+    if (visible(c)) Object.assign(base, faces(room, c), { name: c.name, transformed: c.transformed, finish: c.finish || undefined });
     return base;
   };
   return {
@@ -269,6 +333,9 @@ function handle(ws, msg) {
     case 'loadDeck': {
       const list = Array.isArray(msg.cards) ? msg.cards.slice(0, 250) : [];
       removeOwnedCards(room, me.id);
+      // Custom art only counts if the picture was uploaded first.
+      const artOf = (id) => (typeof id === 'string' && me.art && me.art.has(id) ? id : undefined);
+      const usedArt = new Set();
       for (const c of list) {
         const id = crypto.randomUUID().slice(0, 12);
         const cardObj = {
@@ -284,7 +351,13 @@ function handle(ws, msg) {
         room.cards.set(id, cardObj);
         me.zones.library.push(id);
         if (c.commander) cardObj.commander = true;
+        const art = artOf(c.art);
+        const artBack = cardObj.back ? artOf(c.artBack) : undefined;
+        if (art) { cardObj.art = art; usedArt.add(art); }
+        if (artBack) { cardObj.artBack = artBack; usedArt.add(artBack); }
       }
+      // Let go of pictures from an earlier deck.
+      if (me.art) for (const id of [...me.art.keys()]) if (!usedArt.has(id)) me.art.delete(id);
       // Each deck can bring its own card back; a deck without one uses the official back.
       me.cardBack = jpegFrom(msg.cardBack, 120 * 1024);
       me.backV = (me.backV || 0) + 1;
@@ -354,7 +427,7 @@ function handle(ws, msg) {
       // Only the searching player gets the card list.
       send(ws, { type: 'library', cards: me.zones.library.map((id) => {
         const c = room.cards.get(id);
-        return { id: c.id, owner: c.owner, name: c.name, img: c.img, back: c.back, finish: c.finish || undefined };
+        return { id: c.id, owner: c.owner, name: c.name, ...faces(room, c), finish: c.finish || undefined };
       }) });
       if (!msg.quiet) addLog(room, `${me.name} is looking through their library.`);
       break;
