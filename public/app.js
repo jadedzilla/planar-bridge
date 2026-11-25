@@ -1874,15 +1874,28 @@ function parseDeck(text) {
   let section = 'main';
   // Blank lines split a list into blocks. MTGO style exports (Moxfield's
   // included) set the commander apart that way, with no heading.
-  let block = 0, gap = false;
+  let block = 0, gap = false, headings = false;
   for (let raw of text.split(/\r?\n/)) {
     let line = raw.trim();
-    if (!line) { gap = true; continue; }
-    if (line.startsWith('//') || line.startsWith('#')) continue;
-    const head = line.toLowerCase().replace(/[:\s]+$/, '');
-    if (['sideboard', 'maybeboard', 'considering', 'tokens'].includes(head)) { section = 'side'; continue; }
-    if (['commander', 'commanders'].includes(head)) { section = 'commander'; continue; }
-    if (['deck', 'main', 'mainboard', 'main deck', 'companion'].includes(head)) { section = 'main'; continue; }
+    if (!line) {
+      gap = true;
+      // ManaBox: a blank line after the commander section starts the main deck.
+      if (section === 'commander' && out.some((e) => e.commander)) section = 'main';
+      continue;
+    }
+    // Section headings, written plain ("Sideboard"), with a colon ("SIDEBOARD:"),
+    // as a comment ("// COMMANDER", "//Main") or with a count ("Commander (1)").
+    const comment = /^(\/\/|#)/.test(line);
+    const head = line.toLowerCase().replace(/^(\/\/|#)\s*/, '').replace(/\s*\(\d+\)$/, '').replace(/[:\s]+$/, '');
+    const heading = (s) => { section = s; headings = true; };
+    if (['sideboard', 'side', 'maybeboard', 'maybe', 'considering', 'tokens', 'attractions', 'stickers', 'planes', 'schemes'].includes(head)) { heading('side'); continue; }
+    if (['commander', 'commanders', 'command zone'].includes(head)) { heading('commander'); continue; }
+    if (['deck', 'main', 'mainboard', 'main deck', 'companion', 'companions'].includes(head)) { heading('main'); continue; }
+    // MTG Arena puts the deck's name under "About" ("Name My deck").
+    if (head === 'about') { heading('side'); continue; }
+    if (comment) continue;
+    // Category headings from copying a deck page, like "Creatures (30)".
+    if (/^[a-z][a-z' -]*\(\d+\)$/i.test(line)) { heading('main'); continue; }
     if (/^sb:\s*/i.test(line)) continue; // MTGO style sideboard line
     if (section === 'side') continue;
     if (gap && out.length) block++;
@@ -1912,14 +1925,30 @@ function parseDeck(text) {
       if (/\b(sideboard|maybeboard|considering)\b|\{nodeck\}/i.test(cat[1])) continue;
       if (/\bcommander\b/i.test(cat[1])) commander = true;
     }
+    // Deckstats marks the commander with a comment: "# !Commander".
+    if (/\s#\s*!?commander\b/i.test(rest)) commander = true;
     rest = rest.replace(/\s+#.*$/, '').replace(/\s+\[[^\]]*\]\s*$/, '');
     let set = null, num = null;
+    // Deckstats puts the set before the name: "1 [M19] Sol Ring", "1 [2XM#213] ..."
+    const pre = rest.match(/^\[([A-Za-z0-9]{2,6})(?:[#:]([A-Za-z0-9\-★]+))?\]\s+(.+)$/);
+    if (pre) { set = pre[1].toLowerCase(); num = pre[2] || null; rest = pre[3]; }
     const sm = rest.match(/^(.*?)\s+\(([A-Za-z0-9]{2,6})\)\s*([A-Za-z0-9\-★]+)?\s*$/);
-    if (sm) { rest = sm[1]; set = sm[2].toLowerCase(); num = sm[3] || null; }
+    if (sm && !pre) { rest = sm[1]; set = sm[2].toLowerCase(); num = sm[3] || null; }
     // Moxfield writes Rooms with one slash ("Dazzling Theater / Prop Room");
     // Scryfall names every two-part card with two.
     const name = rest.trim().replace(/\s+\/\s+/, ' // ');
     if (name) out.push({ qty, name, set, num, commander, finish, block });
+  }
+  // MTGO style lists (MTGO, MTGGoldfish, Deckbox) have no headings: the main
+  // deck, a blank line, then up to 15 sideboard cards. A Commander deck's last
+  // block is its commander instead, so keep one or two cards that make ~100.
+  const blocks = [...new Set(out.map((e) => e.block))];
+  if (!headings && blocks.length === 2) {
+    const count = (b) => out.filter((e) => e.block === b).reduce((n, e) => n + e.qty, 0);
+    const main = count(blocks[0]), side = count(blocks[1]);
+    const lastCount = out.filter((e) => e.block === blocks[1]).length;
+    const commanderBlock = lastCount <= 2 && main + side >= 95 && main + side <= 102;
+    if (main >= 40 && side <= 15 && !commanderBlock) return out.filter((e) => e.block === blocks[0]);
   }
   return out;
 }
