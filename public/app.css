@@ -343,45 +343,13 @@ html, body { background: var(--table); }
 .handbar { background: linear-gradient(to top, rgba(16,17,20,.92), rgba(16,17,20,.5) 70%, rgba(16,17,20,0)); -webkit-backdrop-filter: none; backdrop-filter: none; border-top: none; }
 .hand-tab { background: #2a2e35; border: none; box-shadow: var(--raise-1); }
 
-/* --- Life: a spindown die, matte with soft facets --- */
+/* --- Life: a round counter puck between − and + --- */
 .me-life { background: none; padding: 0; gap: 6px; }
 .me-life button, .btn.round, .hud .code-chip {
   border: none; color: var(--text); background: linear-gradient(#30353d, #272b32); box-shadow: var(--raise-1);
 }
 .me-life button { width: 42px; height: 42px; border-radius: 50%; font-size: 22px; }
 .me-life button:active, .btn.round:active { transform: translateY(1px); box-shadow: 0 1px 2px rgba(0,0,0,.35); }
-.spindown {
-  --die: var(--my-seat, #4f7fd0);
-  position: relative; display: grid; place-items: center;
-  width: 80px; height: 90px; flex: none;
-  filter: drop-shadow(0 2px 2px rgba(0,0,0,.35)) drop-shadow(0 8px 12px rgba(0,0,0,.3));
-}
-.spindown::before, .spindown::after { content: ""; position: absolute; inset: 0; pointer-events: none; }
-/* hexagon outline of a d20 with three soft facets, then its top face */
-.spindown::before {
-  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
-  background: conic-gradient(from 30deg at 50% 50%,
-    color-mix(in srgb, var(--die) 78%, #000) 0 120deg,
-    color-mix(in srgb, var(--die) 62%, #000) 120deg 240deg,
-    color-mix(in srgb, var(--die) 90%, #fff) 240deg 360deg);
-}
-.spindown::after {
-  inset: 22% 14% 18%;
-  clip-path: polygon(50% 0, 100% 100%, 0 100%);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--die) 85%, #fff), var(--die));
-}
-.spindown .val, .me-life .spindown .val { position: relative; z-index: 1; min-width: 0; margin-top: 26%; font-size: 24px; font-weight: 700; color: #fff; text-shadow: 0 1px 1px rgba(0,0,0,.35); font-variant-numeric: tabular-nums; }
-.spindown .val.low { color: #fff; }
-.spindown:has(.val.low) { --die: var(--danger); }
-.spindown.roll { animation: die-roll .45s cubic-bezier(.3,1.4,.5,1); }
-@keyframes die-roll { 0% { transform: rotate(0) scale(1); } 40% { transform: rotate(-20deg) scale(.92); } 100% { transform: rotate(0) scale(1); } }
-
-/* Small dice on the opponent bands */
-.edge-die { --die: var(--seat, #666); width: 36px; height: 40px; filter: drop-shadow(0 1px 2px rgba(0,0,0,.4)); }
-.edge-die .val { font-size: 13px !important; margin-top: 30% !important; }
-.edge[data-rel="1"] .edge-die, .edge[data-rel="3"] .edge-die { writing-mode: horizontal-tb; }
-.edge[data-rel="1"] .edge-die .val { display: inline-block; transform: rotate(90deg); }
-.edge[data-rel="3"] .edge-die .val { display: inline-block; transform: rotate(-90deg); }
 
 /* --- Opponent bands: the near edge of their mat --- */
 .edge {
@@ -398,14 +366,10 @@ html, body { background: var(--table); }
 @media (max-width: 600px) {
   .library-back, .pile .card { width: 88%; }
   .pile-label { letter-spacing: .5px; font-size: 8px; }
-  .spindown { width: 60px; height: 68px; }
-  .spindown .val, .me-life .spindown .val { font-size: 18px; }
   .me-life button { width: 34px; height: 34px; font-size: 18px; }
-  .edge-die { width: 30px; height: 34px; }
-  .edge-die .val { font-size: 12px !important; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .card, .library-back.shuffling::before, .library-back.shuffling::after, .spindown.roll { transition: none; animation: none; }
+  .card, .library-back.shuffling::before, .library-back.shuffling::after, .life-puck.bump { transition: none; animation: none; }
 }
 
 /* --- Library, graveyard and exile: card-sized spots, label underneath --- */
@@ -425,10 +389,6 @@ html, body { background: var(--table); }
 }
 .piles { padding-top: 14px; }
 .pile .count:empty { display: none; }
-
-/* Life number centred on the die: the top face is a smaller hexagon around it */
-.spindown::after { inset: 18% 16%; clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%); }
-.spindown .val, .me-life .spindown .val, .edge-die .val { margin-top: 0 !important; text-align: center; line-height: 1; }
 
 /* --- Custom playmat pictures --- */
 .mat.has-art .mat-body::before {
@@ -909,3 +869,87 @@ html, body { background: var(--table); }
 .cmdr-pick .note { margin: 0 0 8px; }
 .cmdr-options { display: flex; flex-direction: column; gap: 6px; max-height: 180px; overflow-y: auto; margin-bottom: 10px; }
 .cmdr-options .check { color: inherit; font-size: 14px; }
+
+/* =====================================================================
+   Life and commander damage
+   ===================================================================== */
+/* Your life: a matte puck, slightly domed, lit from above */
+.life-puck {
+  position: relative; flex: none; width: 76px; height: 76px; border-radius: 50%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  background: radial-gradient(circle at 50% 30%, #3a4049, #2a2e35 62%, #23272d);
+  box-shadow: 0 1px 0 rgba(255,255,255,.09) inset, 0 -2px 3px rgba(0,0,0,.25) inset, 0 2px 3px rgba(0,0,0,.35), 0 8px 16px rgba(0,0,0,.3);
+}
+.life-puck::before { content: ""; position: absolute; inset: 6px; border-radius: 50%; box-shadow: inset 0 1px 2px rgba(0,0,0,.35), 0 1px 0 rgba(255,255,255,.05); pointer-events: none; }
+.me-life .life-puck .val { min-width: 0; font-size: 30px; font-weight: 750; line-height: 1; color: #f2f4f7; }
+.life-puck .lbl { font-size: 8.5px; letter-spacing: 1.6px; text-transform: uppercase; color: rgba(255,255,255,.4); line-height: 1; }
+.me-life .life-puck .val.low { color: #ff8f86; }
+.life-puck.low { background: radial-gradient(circle at 50% 30%, #4a3233, #352628 62%, #2c2022); }
+.life-puck.bump { animation: puck-bump .28s cubic-bezier(.3,1.5,.5,1); }
+@keyframes puck-bump { 0% { transform: scale(1); } 35% { transform: scale(.94); } 100% { transform: scale(1); } }
+
+/* Other players' life on their bands: a small flat counter */
+.life-chip { display: inline-grid; place-items: center; min-width: 34px; height: 28px; padding: 0 7px; border-radius: 14px; background: rgba(0,0,0,.28); box-shadow: inset 0 1px 2px rgba(0,0,0,.35), 0 1px 0 rgba(255,255,255,.05); }
+.life-chip .edge-life { font-size: 17px; line-height: 1; }
+.life-chip.low .edge-life { color: #ff8f86; }
+.edge[data-rel="1"] .life-chip, .edge[data-rel="3"] .life-chip { writing-mode: horizontal-tb; height: auto; min-width: 0; width: 28px; padding: 6px 0; }
+.edge[data-rel="1"] .life-chip .val { transform: rotate(90deg); }
+.edge[data-rel="3"] .life-chip .val { transform: rotate(-90deg); }
+
+/* Commander damage counters: one per commander, marked with its owner's colour */
+.cmd-chip { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 7px 0 5px; border-radius: 11px; background: rgba(0,0,0,.3); box-shadow: inset 0 1px 1px rgba(0,0,0,.3); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cmd-chip b { font-weight: 750; }
+.cmd-chip.zero { color: var(--muted); }
+.cmd-chip .cmd-name { max-width: 110px; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-size: 11px; }
+.cmd-dot { width: 9px; height: 9px; flex: none; border-radius: 50%; background: var(--owner); box-shadow: 0 0 0 1.5px rgba(0,0,0,.45); }
+.cmd-chip.lethal { background: color-mix(in srgb, var(--danger) 75%, #000); color: #fff; box-shadow: 0 0 0 1px #ff8f86 inset; }
+.cmd-chip.lethal .cmd-name { color: #ffd9d5; }
+.edge[data-rel="1"] .cmd-chip, .edge[data-rel="3"] .cmd-chip { writing-mode: horizontal-tb; flex-direction: column; height: auto; width: 22px; padding: 5px 0; gap: 3px; }
+.edge[data-rel="1"] .cmd-chip b { transform: rotate(90deg); }
+.edge[data-rel="3"] .cmd-chip b { transform: rotate(-90deg); }
+
+/* The strip beside your life, and the small one on table and playmat labels */
+.cmd-strip { display: flex; align-items: center; gap: 5px; margin-left: 6px; padding: 6px 8px; border: none; border-radius: 14px; cursor: pointer; touch-action: manipulation; color: var(--text); background: linear-gradient(#30353d, #272b32); box-shadow: var(--raise-1); }
+.me-life .cmd-strip { width: auto; height: auto; border-radius: 14px; font-size: 12px; }
+.cmd-strip:active { transform: translateY(1px); }
+.cmd-title { font-size: 9px; line-height: 1.15; letter-spacing: 1px; text-transform: uppercase; color: rgba(255,255,255,.45); text-align: left; margin-right: 2px; }
+.cmd-strip.small { margin-left: 0; padding: 3px 6px; border-radius: 12px; gap: 4px; }
+.cmd-strip.small .cmd-chip { height: 18px; font-size: 11px; }
+.cmd-none { font-size: 12px; color: var(--muted); padding-right: 2px; }
+/* a little commander's crown, drawn in CSS */
+.cmd-icon { width: 14px; height: 10px; flex: none; background: rgba(255,255,255,.55); clip-path: polygon(0 100%, 0 20%, 25% 60%, 50% 0, 75% 60%, 100% 20%, 100% 100%); }
+
+/* The commander damage sheet */
+.cmd-player { border-top: 1px solid var(--line); padding: 10px 0 6px; scroll-margin-top: 8px; }
+.cmd-who { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; }
+.cmd-who .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--seat); flex: none; }
+.cmd-life { margin-left: auto; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cmd-life.low { color: var(--danger); }
+.cmd-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; margin: 4px 0; border-radius: 10px; background: rgba(0,0,0,.18); }
+.cmd-from { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; }
+.cmd-cname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmd-from .muted { font-size: 12px; white-space: nowrap; }
+.cmd-count { display: flex; align-items: center; gap: 4px; }
+.cmd-count button { width: 38px; height: 38px; border-radius: 50%; border: none; font-size: 20px; cursor: pointer; touch-action: manipulation; color: var(--text); background: linear-gradient(#30353d, #272b32); box-shadow: var(--raise-1); }
+.cmd-count button:active { transform: translateY(1px); }
+.cmd-count button:disabled { opacity: .35; cursor: default; }
+.cmd-count .val { min-width: 36px; text-align: center; font-size: 22px; font-weight: 750; font-variant-numeric: tabular-nums; }
+.cmd-row.lethal { background: color-mix(in srgb, var(--danger) 22%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 60%, transparent); }
+.cmd-row.lethal .val { color: #ff8f86; }
+.cmd-lethal { font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; font-weight: 700; color: #fff; background: var(--danger); border-radius: 6px; padding: 3px 6px; }
+.cmd-empty { margin: 2px 0 4px; font-size: 13px; }
+
+@media (max-width: 600px) {
+  .life-puck { width: 58px; height: 58px; }
+  .life-puck::before { inset: 4px; }
+  .me-life .life-puck .val { font-size: 22px; }
+  .life-puck .lbl { font-size: 7px; letter-spacing: 1px; }
+  .life-chip { min-width: 26px; height: 22px; padding: 0 5px; }
+  .life-chip .edge-life { font-size: 14px; }
+  .edge[data-rel="1"] .life-chip, .edge[data-rel="3"] .life-chip { width: 22px; }
+  .cmd-strip, .me-life .cmd-strip { padding: 4px 6px; gap: 4px; margin-left: 2px; }
+  .cmd-title, .cmd-chip .cmd-name { display: none; }
+  .cmd-chip { height: 20px; padding: 0 6px 0 4px; font-size: 11px; }
+  .cmd-row { flex-wrap: wrap; gap: 6px 10px; }
+  .cmd-count button { width: 36px; height: 36px; }
+}

@@ -276,6 +276,10 @@ function viewFor(room, viewerId) {
       life: p.life,
       shuffles: p.shuffles || 0, // lets every tablet play the shuffle motion
       hasCommander: [...room.cards.values()].some((c) => c.owner === p.id && c.commander),
+      // Commanders are public, so everyone sees their names wherever they are.
+      commanders: [...room.cards.values()].filter((c) => c.owner === p.id && c.commander).map((c) => ({ id: c.id, name: c.name })),
+      // Commander damage this player has taken, by the commander that dealt it.
+      cmdDamage: Object.fromEntries(Object.entries(p.cmdDamage || {}).filter(([id, n]) => n > 0 && room.cards.has(id))),
       mat: p.mat ? p.matV : 0, // custom playmat version, fetched from /mat/<code>/<id>
       cardBack: p.cardBack ? p.backV : 0, // custom card back version, fetched from /back/<code>/<id>
       connected: p.connected,
@@ -461,6 +465,30 @@ function handle(ws, msg) {
       }
       break;
     }
+    case 'cmdDamage': {
+      // Commander damage is tracked per commander (partners count separately).
+      // It's also life loss, so the player's life goes down by the same amount.
+      const target = player(room, msg.playerId);
+      const src = card;
+      if (!target || !src || !src.commander || src.owner === target.id) return;
+      target.cmdDamage = target.cmdDamage || {};
+      const was = target.cmdDamage[src.id] || 0;
+      const now = clamp(was + Math.trunc(Number(msg.delta) || 0), 0, 99);
+      if (now === was) return;
+      target.cmdDamage[src.id] = now;
+      target.life = clamp(target.life - (now - was), -999, 999);
+      const text = `${target.name} has taken ${now} commander damage from ${src.name} (life ${target.life}).`;
+      const last = room.log[room.log.length - 1];
+      const key = `cmd:${target.id}>${src.id}`;
+      if (last && last.lifeKey === key && Date.now() - last.t < 4000) {
+        last.text = text;
+        last.t = Date.now();
+      } else {
+        addLog(room, text);
+        room.log[room.log.length - 1].lifeKey = key;
+      }
+      break;
+    }
     case 'newGame': {
       // Gather every card this player owns back into their library and shuffle.
       for (const c of room.cards.values()) {
@@ -470,6 +498,7 @@ function handle(ws, msg) {
       me.shuffles = (me.shuffles || 0) + 1;
       commandersHome(room, me);
       me.life = room.startingLife;
+      me.cmdDamage = {};
       addLog(room, `${me.name} reset: all their cards back in library (commanders in the command zone), shuffled, life ${me.life}.`);
       break;
     }
