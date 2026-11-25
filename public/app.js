@@ -371,8 +371,23 @@ function playFocus(id, opening, done) {
       art.band.pic.style.transform = art.band.at(art.fit(open));
     }
   };
+  // The shadow sits beside the opening (its own would be clipped away),
+  // following its shape and deepening as it grows.
+  const shadow = document.createElement('div');
+  shadow.className = 'focus-shadow';
+  area.before(shadow);
+  const applyShadow = (k) => {
+    const ins = fromIns.map((v) => lerp(v, 0, k));
+    Object.assign(shadow.style, {
+      left: px(area.offsetLeft + ins[3]), top: px(area.offsetTop + ins[0]),
+      width: px(F.width - ins[1] - ins[3]), height: px(F.height - ins[0] - ins[2]),
+      borderRadius: radii(bandR.map((r) => lerp(r, 12, k))),
+      opacity: (k * k).toFixed(3),
+    });
+  };
   area.classList.add('animating');
   apply(opening ? 0 : 1);
+  applyShadow(opening ? 0 : 1);
 
   const finish = () => {
     // leave the closed board hidden behind the band before taking the clip off
@@ -383,6 +398,7 @@ function playFocus(id, opening, done) {
     if (art) { art.surface.el.remove(); art.body.classList.remove('art-moving'); }
     cover.remove();
     tab.remove();
+    shadow.remove();
     focusAnim = null;
     done && done();
   };
@@ -391,7 +407,9 @@ function playFocus(id, opening, done) {
   const frame = (now) => {
     if (!start) start = now;
     const t = Math.min(1, (now - start) / duration);
-    apply(ease(opening ? t : 1 - t));
+    const k = ease(opening ? t : 1 - t);
+    apply(k);
+    applyShadow(k);
     if (t < 1) requestAnimationFrame(frame);
     else finish();
   };
