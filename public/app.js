@@ -1905,10 +1905,11 @@ function parseDeck(text) {
       finish = /etched/i.test(f) ? 'etched' : finish || 'foil';
       return '';
     });
-    // Archidekt style category tags: [Commander{top}], [Sideboard], [Maybeboard]
+    // Archidekt style category tags: [Commander{top}], [Sideboard], [Maybeboard].
+    // {noDeck} marks a category that isn't part of the deck.
     const cat = rest.match(/\s+\[([^\]]*)\]\s*$/);
     if (cat) {
-      if (/\b(sideboard|maybeboard|considering)\b/i.test(cat[1])) continue;
+      if (/\b(sideboard|maybeboard|considering)\b|\{nodeck\}/i.test(cat[1])) continue;
       if (/\bcommander\b/i.test(cat[1])) commander = true;
     }
     rest = rest.replace(/\s+#.*$/, '').replace(/\s+\[[^\]]*\]\s*$/, '');
