@@ -377,10 +377,15 @@ function playFocus(id, opening, done) {
   shadow.className = 'focus-shadow';
   area.before(shadow);
   const applyShadow = (k) => {
+    // under the part of the opening the board itself fills (from the side
+    // bands the opening starts taller than the board)
     const ins = fromIns.map((v) => lerp(v, 0, k));
+    const mx = sx * (1 - k), my = sy * (1 - k);
+    const x0 = Math.max(ins[3], mx), y0 = Math.max(ins[0], my);
+    const x1 = Math.min(F.width - ins[1], mx + F.width), y1 = Math.min(F.height - ins[2], my + F.height);
     Object.assign(shadow.style, {
-      left: px(area.offsetLeft + ins[3]), top: px(area.offsetTop + ins[0]),
-      width: px(F.width - ins[1] - ins[3]), height: px(F.height - ins[0] - ins[2]),
+      left: px(area.offsetLeft + x0), top: px(area.offsetTop + y0),
+      width: px(Math.max(0, x1 - x0)), height: px(Math.max(0, y1 - y0)),
       borderRadius: radii(bandR.map((r) => lerp(r, 12, k))),
       opacity: (k * k).toFixed(3),
     });
