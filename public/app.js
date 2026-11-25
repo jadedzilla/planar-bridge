@@ -322,7 +322,7 @@ function createMat(p) {
 function fitStitches(body) {
   const cs = getComputedStyle(body, '::after');
   const r = parseFloat(cs.getPropertyValue('--r')) || 20;
-  const fit = (len) => (len > 0 ? (len / Math.max(1, Math.round(len / 2.8))).toFixed(4) + 'px' : '2.8px');
+  const fit = (len) => (len > 0 ? (len / Math.max(1, Math.round(len / 4.2))).toFixed(4) + 'px' : '4.2px');
   const w = body.clientWidth - parseFloat(cs.left) - parseFloat(cs.right) - 2 * r;
   const h = body.clientHeight - parseFloat(cs.top) - parseFloat(cs.bottom) - 2 * r;
   body.style.setProperty('--spx', fit(w));
