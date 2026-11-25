@@ -903,3 +903,9 @@ html, body { background: var(--table); }
   .tv-life button { width: 24px; height: 22px; font-size: 14px; }
   .tv-life .val { font-size: 14px; min-width: 24px; }
 }
+
+/* Asking which card is the commander when an imported list doesn't say */
+.cmdr-pick { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.cmdr-pick .note { margin: 0 0 8px; }
+.cmdr-options { display: flex; flex-direction: column; gap: 6px; max-height: 180px; overflow-y: auto; margin-bottom: 10px; }
+.cmdr-options .check { color: inherit; font-size: 14px; }
