@@ -1170,7 +1170,7 @@ function openCardMenu(cardId) {
   sheet.querySelectorAll('[data-op]').forEach((b) => {
     b.onclick = () => {
       const op = b.dataset.op;
-      if (op === 'peekBack') { const im = $('.sheet-card img', sheet); im.src = im.src === c.back ? c.img : c.back; return; }
+      if (op === 'peekBack') { const im = $('.sheet-card img', sheet); im.src = im.getAttribute('src') === c.back ? c.img : c.back; return; }
       if (op === 'ctr+' || op === 'ctr-') send({ type: 'counter', cardId, delta: op === 'ctr+' ? 1 : -1 });
       else send({ type: op, cardId });
       closeSheet();
@@ -1298,9 +1298,13 @@ function packCards(cards) {
   }
   return out;
 }
-function unpackCards(packed) {
+// With a deck's custom art map, each card also carries the art ids for its faces.
+function unpackCards(packed, art) {
   const out = [];
-  for (const c of packed) for (let k = 0; k < (c.qty || 1); k++) out.push({ name: c.name, img: c.img, back: c.back, commander: c.commander, finish: c.finish });
+  for (const c of packed) {
+    const a = art ? artIdsFor(art, c) : {};
+    for (let k = 0; k < (c.qty || 1); k++) out.push({ name: c.name, img: c.img, back: c.back, commander: c.commander, finish: c.finish, ...a });
+  }
   return out;
 }
 
@@ -1319,6 +1323,8 @@ function saveDeck({ id, name, text, cards, colors, cardBack }) {
   const deck = { id: id || 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: name.slice(0, 60), text, cards: packCards(cards), colors: colors || null, updated: Date.now() };
   if (cardBack) deck.cardBack = cardBack;
   const i = decks.findIndex((d) => d.id === deck.id);
+  // Custom card art is keyed by card name, so it survives editing the list.
+  if (i >= 0 && decks[i].art) deck.art = decks[i].art;
   if (i >= 0) decks[i] = deck; else decks.push(deck);
   storeDecks(decks);
   return deck;
@@ -1326,6 +1332,7 @@ function saveDeck({ id, name, text, cards, colors, cardBack }) {
 function deleteDeck(id) {
   storeDecks(loadDecks().filter((d) => d.id !== id));
   if (pickedDeckId() === id) setPickedDeck('');
+  pruneArt();
 }
 
 // Home screen deck picker: a shelf of card stacks you scroll sideways.
@@ -1398,13 +1405,14 @@ function renderLandingDecks() {
     <label class="deck-tile${on ? ' picked' : ''}">
       <input class="sr-only" type="radio" name="deckPick" value="${esc(d.id)}" ${on ? 'checked' : ''}>
       <span class="deck-stack" data-size="${deckSize(d)}" style="--sleeve:${sleeveOf(d)}">
-        <span class="deck-top${face ? '' : ' back'}">${face ? `<img src="${esc(face.img)}" alt="" loading="lazy" draggable="false">` : ''}</span>
+        <span class="deck-top${face ? '' : ' back'}">${face ? `<img src="${esc(face.img)}" alt="" loading="lazy" draggable="false"${d.art && d.art[artKey(face.name)] ? ` data-art="${esc(d.art[artKey(face.name)])}"` : ''}>` : ''}</span>
         <span class="deck-qty">${deckSize(d)}</span>
         ${manaPips(d.colors)}
       </span>
       <span class="deck-label">${esc(d.name)}</span>
       ${on ? `<span class="deck-actions">
         <button type="button" class="link-btn" data-deck-edit="${esc(d.id)}">Edit</button>
+        <button type="button" class="link-btn" data-deck-art="${esc(d.id)}">Art</button>
         <button type="button" class="link-btn danger" data-deck-del="${esc(d.id)}">Delete</button>
       </span>` : ''}
     </label>`;
@@ -1420,6 +1428,7 @@ function renderLandingDecks() {
       <span class="deck-label">Import a deck</span>
     </button>`;
   shelf.querySelectorAll('.deck-stack').forEach((el) => setStack(el, Number(el.dataset.size)));
+  shelf.querySelectorAll('img[data-art]').forEach(async (im) => { const u = await artObjectUrl(im.dataset.art); if (u) im.src = u; });
   shelf.scrollLeft = scroll;
   const picked = decks.find((d) => d.id === pick);
   $('#deckTabPick').textContent = picked ? '· ' + picked.name : decks.length ? '· none picked' : '';
@@ -1442,8 +1451,10 @@ $('#deckList').addEventListener('click', (e) => {
   if (e.target.closest('[data-deck-add]')) return openDeckSheet({ mode: 'landing' });
   const edit = e.target.closest('[data-deck-edit]');
   const del = e.target.closest('[data-deck-del]');
-  if (!edit && !del) return;
+  const art = e.target.closest('[data-deck-art]');
+  if (!edit && !del && !art) return;
   e.preventDefault(); // don't also pick the tile
+  if (art) return openArtSheet(art.dataset.deckArt);
   if (edit) return openDeckSheet({ mode: 'landing', editId: edit.dataset.deckEdit });
   if (del.dataset.armed) { deleteDeck(del.dataset.deckDel); return renderLandingDecks(); }
   del.dataset.armed = '1';
@@ -1460,17 +1471,15 @@ function bringPendingDeck() {
   app.pendingDeck = null;
   const owned = Object.values(m.counts || {}).reduce((a, b) => a + b, 0);
   if (owned > 0) return;
-  send({ type: 'loadDeck', cards: unpackCards(deck.cards), cardBack: deck.cardBack || null });
-  toast(`${deck.name} is shuffled into your library. Tap your library to draw.`);
+  bringDeck(deck, `${deck.name} is shuffled into your library. Tap your library to draw.`);
 }
 
 function loadSavedDeck(id) {
   const deck = deckById(id);
   if (!deck) return;
   setPickedDeck(deck.id);
-  send({ type: 'loadDeck', cards: unpackCards(deck.cards), cardBack: deck.cardBack || null });
   closeSheet();
-  toast(`Loaded ${deck.name} (${deckSize(deck)} cards) and shuffled. Tap your library to draw.`);
+  bringDeck(deck, `Loaded ${deck.name} (${deckSize(deck)} cards) and shuffled. Tap your library to draw.`);
 }
 
 // mode 'game': load onto the table (and optionally save). mode 'landing': save only.
@@ -1560,7 +1569,8 @@ function finishImport(text, cards, notFound, colors) {
     return;
   }
   if (deck) setPickedDeck(deck.id);
-  send({ type: 'loadDeck', cards, cardBack: app.backDraft || null });
+  if (deck && deck.art) bringDeck(deck);
+  else send({ type: 'loadDeck', cards, cardBack: app.backDraft || null });
   if (missed || saveErr) {
     status.textContent = `Loaded ${cards.length} cards.${saveErr}${missed}`;
   } else {
@@ -1731,6 +1741,351 @@ async function importDeck(text) {
   });
   $('#deckLoad').disabled = false;
   finishImport(text, cards, notFound, sortColors(colors));
+}
+
+// ---------- Custom card art ----------
+// Any card in a saved deck can use your own picture instead of Scryfall's:
+// pick one card at a time, or drop a pile of files and they're matched to the
+// deck's cards by file name. Pictures are cropped to card shape, shrunk to a
+// small JPEG and kept on this device (IndexedDB, which has far more room than
+// the deck list). The deck only stores which picture goes with which card name,
+// so the art stays put when the list is edited. When the deck comes to the
+// table each picture is uploaded once, and every tablet shows it.
+const artUrls = new Map(); // art id -> object URL for this page
+let artDbOpen = null;
+function artDb() {
+  if (!artDbOpen) {
+    artDbOpen = new Promise((ok, fail) => {
+      const req = indexedDB.open('planar-bridge', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('art');
+      req.onsuccess = () => ok(req.result);
+      req.onerror = () => fail(req.error);
+    });
+    artDbOpen.catch(() => { artDbOpen = null; });
+  }
+  return artDbOpen;
+}
+async function artStore(mode, fn) {
+  const db = await artDb();
+  return new Promise((ok, fail) => {
+    const tx = db.transaction('art', mode);
+    const req = fn(tx.objectStore('art'));
+    tx.oncomplete = () => ok(req && req.result);
+    tx.onerror = tx.onabort = () => fail(tx.error);
+  });
+}
+const getArt = (id) => artStore('readonly', (st) => st.get(id)).catch(() => null);
+const putArt = (id, blob) => artStore('readwrite', (st) => st.put(blob, id));
+async function artObjectUrl(id) {
+  if (artUrls.has(id)) return artUrls.get(id);
+  const blob = await getArt(id);
+  if (!blob) return '';
+  const u = URL.createObjectURL(blob);
+  artUrls.set(id, u);
+  return u;
+}
+// Forget pictures no saved deck uses any more.
+async function pruneArt() {
+  const used = new Set(loadDecks().flatMap((d) => Object.values(d.art || {})));
+  try {
+    const keys = await artStore('readonly', (st) => st.getAllKeys());
+    const gone = (keys || []).filter((k) => !used.has(k));
+    if (gone.length) await artStore('readwrite', (st) => { for (const k of gone) st.delete(k); });
+    for (const k of gone) { const u = artUrls.get(k); if (u) URL.revokeObjectURL(u); artUrls.delete(k); }
+  } catch { /* storage unavailable: nothing to tidy */ }
+}
+async function shrinkCardArt(file) {
+  const c = await cardCanvas(file);
+  for (const q of [0.88, 0.8, 0.7, 0.6, 0.5]) {
+    const blob = await new Promise((ok) => c.toBlob(ok, 'image/jpeg', q));
+    if (blob && blob.size < 160 * 1024) return blob;
+  }
+  throw new Error('too big');
+}
+const newArtId = () => 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+
+// Art is keyed by the card's name, plus "//back" for a double-faced card's second face.
+function artKey(name, second) { return norm(name) + (second ? ' //back' : ''); }
+function artIdsFor(art, c) {
+  const out = {};
+  if (art[artKey(c.name)]) out.art = art[artKey(c.name)];
+  if (c.back && art[artKey(c.name, true)]) out.artBack = art[artKey(c.name, true)];
+  return out;
+}
+// Each side of each different card in a deck that can have its own picture.
+function artSlots(deck) {
+  const out = [];
+  const seen = new Set();
+  for (const c of deck.cards) {
+    const faces = c.name.replace(/\s*\([^()]*\)$/, '').split(' // ');
+    for (const second of c.back ? [false, true] : [false]) {
+      const key = artKey(c.name, second);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ key, card: c, second, label: c.back ? faces[second ? 1 : 0] || c.name : c.name, img: second ? c.back : c.img });
+    }
+  }
+  return out;
+}
+
+// File names are matched loosely: case, accents, punctuation, and spaces vs
+// underscores vs hyphens don't matter. "lightning_bolt.png", "Lightning-Bolt (2).jpg",
+// "4x Lightning Bolt [M10].jpeg" and "LightningBolt.webp" all find Lightning Bolt.
+// For a double-faced card either face's name works, and "... back" / "... front"
+// picks the side.
+function looseName(s) {
+  return String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\u00e6/g, 'ae').replace(/\u0153/g, 'oe')
+    .replace(/[’'`"]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+function fileNameGuesses(fileName) {
+  let base = String(fileName).replace(/\.[a-z0-9]{2,5}$/i, '');
+  base = base.replace(/\s*[\[{][^\]}]*[\]}]/g, ' '); // [set] or {tags}
+  let n = looseName(base.replace(/\s*\((?:\d+|copy)\)\s*$/i, ''));
+  let side = null;
+  const sm = n.match(/^(.*?)\s+(front|back|side a|side b|face 1|face 2|1st face|2nd face)$/);
+  if (sm) { n = sm[1]; side = /back|side b|face 2|2nd/.test(sm[2]) ? 'back' : 'front'; }
+  const out = [n];
+  const noQty = n.replace(/^\d+\s*x?\s+/, '');
+  out.push(noQty);
+  // Trailing extras people add: "art", "proxy", "alt", "final", "v2", a copy number.
+  out.push(noQty.replace(/(\s+(art|artwork|proxy|custom|alt|alter|altered|final|edit|copy|v\d+|\d+))+$/, ''));
+  out.push(noQty.replace(/\s+\d+$/, '').replace(/^[a-z0-9]{2,5}\s+\d+\s+/, '')); // "mh2 123 name"
+  return { names: [...new Set(out.filter(Boolean))], side };
+}
+function matchArtFile(fileName, slots) {
+  const { names, side } = fileNameGuesses(fileName);
+  // Every name a slot answers to: the face's name, the whole card's name,
+  // and both halves of "Flavor name (Real name)".
+  const index = [];
+  for (const s of slots) {
+    const whole = s.card.name;
+    const real = (whole.match(/\(([^()]+)\)$/) || [])[1];
+    const shown = whole.replace(/\s*\([^()]*\)$/, '');
+    const names = new Set([s.label, shown, real].filter(Boolean));
+    if (!s.second) { names.add(whole); for (const n of [shown, real]) if (n) names.add(n.split(' // ')[0]); }
+    else for (const n of [shown, real]) if (n && n.includes(' // ')) names.add(n.split(' // ')[1]);
+    for (const n of names) {
+      const l = looseName(n);
+      index.push({ slot: s, loose: l, tight: l.replace(/ /g, ''), front: !s.second });
+    }
+  }
+  const pick = (hits) => {
+    const cards = new Set(hits.map((h) => h.slot.card.name));
+    if (cards.size !== 1) return null;
+    const want = side === 'back' ? (h) => h.slot.second : side === 'front' ? (h) => !h.slot.second : (h) => h.front;
+    return (hits.find(want) || hits.find((h) => h.front) || hits[0]).slot;
+  };
+  // A side named in the file ("... back") also finds the other face of the same card.
+  const withSide = (hit) => {
+    if (!hit || !side) return hit;
+    const other = slots.find((s) => s.card.name === hit.card.name && s.second === (side === 'back'));
+    return other || hit;
+  };
+  for (const n of names) {
+    const exact = pick(index.filter((h) => h.loose === n));
+    if (exact) return withSide(exact);
+  }
+  for (const n of names) {
+    const t = n.replace(/ /g, '');
+    const tight = pick(index.filter((h) => h.tight === t));
+    if (tight) return withSide(tight);
+  }
+  // A short name, like a legend's first name ("Sephiroth"), if only one card starts with it.
+  for (const n of names) {
+    if (n.length < 4) continue;
+    const pre = pick(index.filter((h) => h.loose.startsWith(n + ' ')));
+    if (pre) return withSide(pre);
+  }
+  return null;
+}
+
+// Save one picture for one side of a card in a saved deck.
+async function setDeckArt(deckId, key, file) {
+  const blob = await shrinkCardArt(file);
+  const id = newArtId();
+  await putArt(id, blob);
+  const decks = loadDecks();
+  const d = decks.find((x) => x.id === deckId);
+  if (!d) return;
+  d.art = { ...(d.art || {}), [key]: id };
+  storeDecks(decks);
+}
+function clearDeckArt(deckId, key) {
+  const decks = loadDecks();
+  const d = decks.find((x) => x.id === deckId);
+  if (!d || !d.art) return;
+  delete d.art[key];
+  if (!Object.keys(d.art).length) delete d.art;
+  storeDecks(decks);
+  pruneArt();
+}
+
+// Bring a saved deck to the table: upload its custom art (skipping pictures the
+// server already has), then load the deck. Anything that fails to upload just
+// shows Scryfall's picture.
+async function bringDeck(deck, doneMsg) {
+  const cards = unpackCards(deck.cards, deck.art);
+  const ids = [...new Set(cards.flatMap((c) => [c.art, c.artBack]).filter(Boolean))];
+  if (ids.length && app.code && app.playerId) {
+    const base = `/art/${encodeURIComponent(app.code)}/${encodeURIComponent(app.playerId)}/`;
+    let done = 0, failed = 0;
+    const show = () => toast(`Sending your card art to the table… ${done} of ${ids.length}`);
+    show();
+    const queue = [...ids];
+    const worker = async () => {
+      while (queue.length) {
+        const id = queue.shift();
+        try {
+          const head = await fetch(base + id, { method: 'HEAD' });
+          if (!head.ok) {
+            const blob = await getArt(id);
+            if (!blob) throw new Error('missing');
+            const res = await fetch(base + id, { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: blob });
+            if (!res.ok) throw new Error(String(res.status));
+          }
+        } catch { failed++; }
+        done++;
+        show();
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+    if (failed) doneMsg = `${failed} custom picture${failed === 1 ? '' : 's'} couldn't be sent, so ${failed === 1 ? 'that card shows' : 'those cards show'} the usual art. ` + (doneMsg || '');
+  }
+  send({ type: 'loadDeck', cards, cardBack: deck.cardBack || null });
+  if (doneMsg) toast(doneMsg);
+  else if (ids.length) toast('Card art sent');
+}
+
+// The card art sheet for one saved deck.
+function openArtSheet(deckId, opts = {}) {
+  const deck = deckById(deckId);
+  if (!deck) return;
+  openSheet('art', `
+    <button class="btn small sheet-close" data-close>Done</button>
+    <h3>Card art · ${esc(deck.name)}</h3>
+    <p class="note">Use your own pictures for any card in this deck. Everyone at the table sees them. Pictures are cropped to card shape, so a full card scan works best.</p>
+    <label class="art-drop" id="artDrop">
+      <input type="file" accept="image/*" multiple id="artFiles" hidden>
+      <span class="art-drop-well" aria-hidden="true"><span></span><span></span><span></span></span>
+      <span class="art-drop-text"><b>Add many at once</b><span>Drop pictures here or tap to choose. Each file is matched to a card by its name, like <code>Lightning Bolt.jpg</code>.</span></span>
+    </label>
+    <p class="note art-msg" id="artMsg" role="status"></p>
+    <div id="artLeft"></div>
+    <div class="art-tools">
+      <input id="artFind" type="search" placeholder="Find a card" autocomplete="off" value="${esc(opts.find || '')}">
+      <span class="note" id="artCount"></span>
+    </div>
+    <div class="art-grid" id="artGrid"></div>
+    <input type="file" accept="image/*" id="artOne" hidden>`, { deckId, left: [] });
+  renderArtGrid();
+  const drop = $('#artDrop');
+  $('#artFiles').onchange = (e) => { const files = [...e.target.files]; e.target.value = ''; bulkArt(files); };
+  drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', (e) => {
+    e.preventDefault();
+    drop.classList.remove('over');
+    bulkArt([...e.dataTransfer.files].filter((f) => f.type.startsWith('image/')));
+  });
+  $('#artFind').oninput = () => renderArtGrid();
+  // One card: tap it to choose its picture.
+  let target = null;
+  $('#artOne').onchange = async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file || !target) return;
+    const key = target;
+    $('#artMsg').textContent = 'Preparing your picture…';
+    try { await setDeckArt(deckId, key, file); $('#artMsg').textContent = ''; }
+    catch { $('#artMsg').textContent = "That picture couldn't be used. Try a JPEG or PNG."; }
+    renderArtGrid();
+    renderLandingDecks();
+    pruneArt(); // the picture it replaced
+  };
+  $('#artGrid').addEventListener('click', (e) => {
+    const reset = e.target.closest('[data-art-reset]');
+    if (reset) { clearDeckArt(deckId, reset.dataset.artReset); renderArtGrid(); renderLandingDecks(); return; }
+    const pickBtn = e.target.closest('[data-art-pick]');
+    if (!pickBtn) return;
+    target = pickBtn.dataset.artPick;
+    $('#artOne').click();
+  });
+  $('#artLeft').addEventListener('change', async (e) => {
+    const sel = e.target.closest('select[data-left]');
+    if (!sel || !sel.value) return;
+    const i = Number(sel.dataset.left);
+    const file = sheetData.left[i];
+    sel.disabled = true;
+    try { await setDeckArt(deckId, sel.value, file); sheetData.left[i] = null; }
+    catch { $('#artMsg').textContent = `${file.name} couldn't be used. Try a JPEG or PNG.`; sel.disabled = false; }
+    renderArtLeft();
+    renderArtGrid();
+    renderLandingDecks();
+  });
+}
+async function renderArtGrid() {
+  if (sheetKind !== 'art') return;
+  const deck = deckById(sheetData.deckId);
+  if (!deck) return closeSheet();
+  const art = deck.art || {};
+  const slots = artSlots(deck);
+  const find = looseName($('#artFind').value || '');
+  const shown = find ? slots.filter((s) => looseName(s.card.name).includes(find)) : slots;
+  const custom = slots.filter((s) => art[s.key]).length;
+  $('#artCount').textContent = custom ? `${custom} of ${slots.length} with your art` : `${slots.length} cards`;
+  const small = (u) => String(u || '').replace('/normal/', '/small/');
+  $('#artGrid').innerHTML = shown.map((s) => `
+    <figure class="art-slot${art[s.key] ? ' custom' : ''}">
+      <button type="button" class="art-card" data-art-pick="${esc(s.key)}" aria-label="Choose a picture for ${esc(s.label)}${s.second ? ' (back face)' : ''}">
+        ${s.img || art[s.key] ? `<img alt="" loading="lazy" draggable="false" ${art[s.key] ? `data-art="${esc(art[s.key])}"` : `src="${esc(small(s.img))}"`}>` : `<span class="art-blank">${esc(s.label)}</span>`}
+        ${s.card.back ? `<span class="art-face">${s.second ? 'Back' : 'Front'}</span>` : ''}
+      </button>
+      <figcaption><span class="art-name" title="${esc(s.label)}">${esc(s.label)}</span>${art[s.key] ? `<button type="button" class="link-btn" data-art-reset="${esc(s.key)}">Reset</button>` : ''}</figcaption>
+    </figure>`).join('') || '<p class="muted">No cards match.</p>';
+  for (const im of $('#artGrid').querySelectorAll('img[data-art]')) {
+    const u = await artObjectUrl(im.dataset.art);
+    if (u && im.isConnected) im.src = u;
+  }
+}
+// Files that didn't match a card, each with a menu to pick its card by hand.
+function renderArtLeft() {
+  const box = $('#artLeft');
+  if (!box || sheetKind !== 'art') return;
+  const deck = deckById(sheetData.deckId);
+  const left = sheetData.left.map((f, i) => [f, i]).filter(([f]) => f);
+  if (!left.length || !deck) { box.innerHTML = ''; return; }
+  const opts = artSlots(deck).map((s) => `<option value="${esc(s.key)}">${esc(s.label)}${s.card.back ? (s.second ? ' (back)' : ' (front)') : ''}</option>`).join('');
+  box.innerHTML = `<div class="art-left">
+    <p class="note">${left.length === 1 ? "This picture didn't" : "These pictures didn't"} match a card name. Pick the card for each:</p>
+    ${left.map(([f, i]) => `<label class="art-left-row"><span class="art-file">${esc(f.name)}</span>
+      <select data-left="${i}"><option value="">Choose a card…</option>${opts}</select></label>`).join('')}
+  </div>`;
+}
+async function bulkArt(files) {
+  if (!files.length || sheetKind !== 'art') return;
+  const deckId = sheetData.deckId;
+  const deck = deckById(deckId);
+  const slots = artSlots(deck);
+  const msg = $('#artMsg');
+  const left = [];
+  const bad = [];
+  let matched = 0;
+  for (const [n, f] of files.entries()) {
+    msg.textContent = `Preparing ${n + 1} of ${files.length}…`;
+    const slot = matchArtFile(f.name, slots);
+    if (!slot) { left.push(f); continue; }
+    try { await setDeckArt(deckId, slot.key, f); matched++; } catch { bad.push(f.name); }
+  }
+  if (sheetKind !== 'art' || sheetData.deckId !== deckId) return;
+  sheetData.left = sheetData.left.filter(Boolean).concat(left);
+  msg.textContent = [
+    matched ? `Matched ${matched} of ${files.length} picture${files.length === 1 ? '' : 's'} to cards.` : files.length ? 'None of those file names matched a card.' : '',
+    bad.length ? `Couldn't use: ${bad.join(', ')}.` : '',
+  ].filter(Boolean).join(' ');
+  renderArtLeft();
+  renderArtGrid();
+  renderLandingDecks();
+  pruneArt(); // pictures that were replaced
 }
 
 // ---------- Top bar ----------
@@ -1915,7 +2270,8 @@ async function shrinkImage(file) {
 // Each saved deck can have its own card back. The picture is cropped to card
 // shape and shrunk to a small JPEG on this device, saved with the deck, and
 // sent to the table when the deck is loaded so everyone sees it.
-async function shrinkCardBack(file) {
+// A picture cropped to fill a card (63:88), at Scryfall's card size.
+async function cardCanvas(file) {
   const url = URL.createObjectURL(file);
   try {
     const img = await new Promise((ok, fail) => { const i = new Image(); i.onload = () => ok(i); i.onerror = fail; i.src = url; });
@@ -1924,13 +2280,20 @@ async function shrinkCardBack(file) {
     const sw = W / k, sh = H / k;
     const c = document.createElement('canvas');
     c.width = W; c.height = H;
-    c.getContext('2d').drawImage(img, (img.naturalWidth - sw) / 2, (img.naturalHeight - sh) / 2, sw, sh, 0, 0, W, H);
-    for (const q of [0.85, 0.75, 0.65, 0.5, 0.4]) {
-      const data = c.toDataURL('image/jpeg', q);
-      if (data.length < 150 * 1024) return data; // about 110 KB once decoded
-    }
-    throw new Error('too big');
+    const g = c.getContext('2d');
+    g.fillStyle = '#000'; // transparent PNGs get a black border colour, not JPEG white
+    g.fillRect(0, 0, W, H);
+    g.drawImage(img, (img.naturalWidth - sw) / 2, (img.naturalHeight - sh) / 2, sw, sh, 0, 0, W, H);
+    return c;
   } finally { URL.revokeObjectURL(url); }
+}
+async function shrinkCardBack(file) {
+  const c = await cardCanvas(file);
+  for (const q of [0.85, 0.75, 0.65, 0.5, 0.4]) {
+    const data = c.toDataURL('image/jpeg', q);
+    if (data.length < 150 * 1024) return data; // about 110 KB once decoded
+  }
+  throw new Error('too big');
 }
 function showBackDraft() {
   const prev = $('.back-preview');
