@@ -374,7 +374,8 @@ html, body { background: var(--table); }
   color: var(--text);
 }
 .edge.empty { background: rgba(255,255,255,.02); box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); }
-.edge.focused { box-shadow: inset 0 0 0 2px var(--seat), 0 6px 16px rgba(0,0,0,.35); }
+/* an open board is that player's band, slid out of its spot */
+.edge.focused { visibility: hidden; }
 .edge.drop-hover { background: color-mix(in srgb, var(--accent) 30%, #23272e); }
 
 @media (max-width: 600px) {

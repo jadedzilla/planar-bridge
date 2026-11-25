@@ -214,8 +214,9 @@ function matFor(p) {
 
 // Opening another player's playmat turns their band into it: the band slides
 // out of its spot and stretches to the size of the playmat, and the board
-// slides in underneath as the band's colour and label fade away.
-// Closing plays the same motion backwards, shrinking back into the band.
+// slides in underneath as the band's colour and label fade away. The band's
+// spot stays empty while its board is open. Closing plays the same motion
+// backwards, shrinking the board back into the band.
 let focusAnim = null;
 function setFocus(id) {
   if (focusAnim) return;
@@ -279,8 +280,6 @@ function playFocus(id, opening, done) {
     mat.animate([{ boxShadow: '0 16px 40px rgba(0,0,0,0)' }, { boxShadow: '0 16px 40px rgba(0,0,0,0)', offset: 0.45 }, { boxShadow: '0 16px 40px rgba(0,0,0,.6)' }], timing),
     cover.animate([{ opacity: 1 }, { opacity: 1, offset: 0.25 }, { opacity: 0, offset: 0.7 }, { opacity: 0 }], timing),
     tab.animate([{ transform: 'none', opacity: 1 }, { opacity: 1, offset: 0.2 }, { opacity: 0, offset: 0.5 }, { transform: `translate(${px(dx)}, ${px(dy)})`, opacity: 0 }], timing),
-    // its old spot stays empty until the board has opened, then it settles back
-    band.animate([{ opacity: 0 }, { opacity: 0, offset: 0.8 }, { opacity: 1 }], timing),
   ];
   focusAnim = anims[0];
   Promise.all(anims.map((a) => a.finished)).catch(() => {}).then(() => {
