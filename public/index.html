@@ -20,7 +20,7 @@
   <section id="landing" class="landing" hidden>
     <div class="landing-card">
       <h1>Planar Bridge</h1>
-      <p class="muted">A shared table for up to 4 players. The app tracks life totals; you run the rest of the game yourselves.</p>
+      <p class="muted">A shared table for up to 4 players. The app tracks life totals and commander damage; you run the rest of the game yourselves.</p>
       <label class="field">Your name
         <input id="nameInput" maxlength="24" autocomplete="nickname" placeholder="e.g. Emma">
       </label>
@@ -87,8 +87,9 @@
     </div>
     <div class="hud hud-bl life me-life">
       <button data-mylife="-1" aria-label="Lose 1 life">−</button>
-      <span class="spindown" id="myDie"><span class="val" id="myLife"></span></span>
+      <span class="life-puck" id="myPuck"><span class="val" id="myLife"></span><span class="lbl">Life</span></span>
       <button data-mylife="1" aria-label="Gain 1 life">+</button>
+      <button class="cmd-strip" id="myCmd" hidden aria-label="Commander damage you've taken"></button>
     </div>
     <footer id="handBar" class="handbar" data-drop="1" data-zone="hand">
       <button class="hand-tab" id="handTab">Hand <span id="handCount"></span> <span class="caret">▾</span></button>

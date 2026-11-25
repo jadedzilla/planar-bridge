@@ -189,8 +189,13 @@ function render() {
   updateMat(myMat, mine, used);
   $('#myLife').textContent = mine.life;
   $('#myLife').classList.toggle('low', mine.life <= 5);
-  if (app.lastLife != null && app.lastLife !== mine.life) replay($('#myDie'), 'roll');
+  $('#myPuck').classList.toggle('low', mine.life <= 5);
+  if (app.lastLife != null && app.lastLife !== mine.life) replay($('#myPuck'), 'bump');
   app.lastLife = mine.life;
+  const myCmd = $('#myCmd');
+  const sources = cmdSources(mine);
+  myCmd.hidden = !sources.length;
+  myCmd.innerHTML = sources.length ? `<span class="cmd-title">Commander<br>damage</span>${cmdChips(mine, true)}` : '';
   $('#game').style.setProperty('--my-seat', mine.color);
 
   for (const [id, mat] of app.matEls) {
@@ -218,6 +223,7 @@ function render() {
 
   renderLog();
   if (sheetKind === 'pile') renderPileSheet();
+  if (sheetKind === 'cmd') renderCmdSheet();
   if (sheetKind === 'seating') renderSeatingSheet();
 }
 
@@ -236,8 +242,9 @@ function renderTableView(used) {
     const p = rel === 0 ? me() : playerAtRel(rel);
     if (!cell.firstElementChild) {
       cell.innerHTML = `<div class="tv-label"><span class="dot"></span><b class="nm"></b><span class="tv-sub"></span>
-        <span class="tv-life"><button data-tvlife="-1" aria-label="Lose 1 life">−</button><span class="val"></span><button data-tvlife="1" aria-label="Gain 1 life">+</button></span></div>
+        <span class="tv-life"><button data-tvlife="-1" aria-label="Lose 1 life">−</button><span class="val"></span><button data-tvlife="1" aria-label="Gain 1 life">+</button></span><button class="cmd-strip small" hidden></button></div>
         <div class="tv-frame"><div class="tv-stage my-area"></div><div class="tv-empty">Empty seat</div></div>`;
+      $('.cmd-strip', cell).onclick = () => cell.dataset.player && openCmdSheet(cell.dataset.player);
       cell.querySelectorAll('[data-tvlife]').forEach((btn) => {
         btn.onclick = () => cell.dataset.player && send({ type: 'life', playerId: cell.dataset.player, delta: Number(btn.dataset.tvlife) });
       });
@@ -258,6 +265,7 @@ function renderTableView(used) {
     const lv = $('.tv-life .val', cell);
     lv.textContent = p.life;
     lv.classList.toggle('low', p.life <= 5);
+    setCmdStrip($('.cmd-strip', cell), p);
     const mat = matFor(p);
     syncChildren(stage, [mat]);
     if (p !== me()) updateMat(mat, p, used);
@@ -586,7 +594,7 @@ function updateEdge(el, p, rel) {
   el.style.setProperty('--seat', p.color);
   el.classList.toggle('focused', app.focus === p.id);
   el.innerHTML = `<span class="edge-inner"><span class="dot"></span><b>${esc(p.name)}</b>${p.connected ? '' : ' <span class="offline">offline</span>'}
-    <span class="spindown edge-die"><span class="val edge-life${p.life <= 5 ? ' low' : ''}">${p.life}</span></span>
+    <span class="life-chip${p.life <= 5 ? ' low' : ''}"><span class="val edge-life">${p.life}</span></span>${cmdChips(p, false, true)}
     <span class="muted">Hand ${p.counts.hand} · Board ${p.counts.battlefield}</span></span>`;
 }
 
@@ -705,6 +713,7 @@ function createMat(p) {
         <span class="val"></span>
         <button data-life="1" aria-label="Gain 1 life">+</button>
       </div>
+      <button class="cmd-strip small" hidden></button>
       <button class="btn small mat-close" aria-label="Close this playmat">Close</button>
     </div>
     <div class="mat-body">
@@ -722,6 +731,7 @@ function createMat(p) {
     b.onclick = () => send({ type: 'life', playerId: p.id, delta: Number(b.dataset.life) });
   });
   $('.mat-close', mat).onclick = () => setFocus(p.id);
+  $('.mat-head .cmd-strip', mat).onclick = () => openCmdSheet(p.id);
   const body = $('.mat-body', mat);
   if (window.ResizeObserver) new ResizeObserver(() => { sizeCards(mat); fitStitches(body); }).observe(body);
   // the binding slides when the hand opens or closes; refit once it settles
@@ -777,6 +787,7 @@ function updateMat(mat, p, used) {
   const lv = $('.life .val', mat);
   lv.textContent = p.life;
   lv.classList.toggle('low', p.life <= 5);
+  setCmdStrip($('.mat-head .cmd-strip', mat), p);
   $('.hand-badge', mat).textContent = `Hand ${p.counts.hand}`;
   $('.hand-badge', mat).hidden = isMe;
   $('.mat-close', mat).hidden = isMe;
@@ -2740,6 +2751,7 @@ function openMoreMenu() {
       <button class="btn" data-m="table">Table view</button>
       <button class="btn" data-m="seating">Seating</button>
       <button class="btn" data-m="playmat">Playmat</button>
+      <button class="btn" data-m="cmd">Commander damage</button>
       <button class="btn" data-m="log">Game log</button>
       <button class="btn" data-m="untap">Untap all</button>
       <button class="btn" data-m="shuffle">Shuffle library</button>
@@ -2758,6 +2770,7 @@ function openMoreMenu() {
       <li>Click or tap a card on the battlefield to tap / untap it. Right-click or long-press for more.</li>
       <li>Tap your library to draw. Drag it to move the top card somewhere.</li>
       <li>Anyone can change anyone's life total with − and +.</li>
+      <li>Tap Commander damage (next to your life, or in this menu) to count damage from each commander. Partners count separately, damage also comes off life, and 21 from one commander is marked lethal.</li>
       <li>A coloured dot on a card means it belongs to the player of that colour.</li>
     </ul>`);
   $('#sheet').querySelectorAll('[data-m]').forEach((b) => {
@@ -2768,12 +2781,13 @@ function openMoreMenu() {
       if (a === 'seating') return openSeatingSheet();
       if (a === 'table') { closeSheet(); return setTableView(true); }
       if (a === 'playmat') return openPlaymatSheet();
+      if (a === 'cmd') return openCmdSheet();
       if (a === 'log') { closeSheet(); $('#logPanel').hidden = false; return renderLog(); }
       if (a === 'fullscreen') { toggleFullscreen(); return closeSheet(); }
       if (a === 'untap') { send({ type: 'untapAll' }); closeSheet(); }
       if (a === 'shuffle') { send({ type: 'shuffle' }); closeSheet(); }
       if (a === 'new') {
-        extra.innerHTML = `<div class="guess">This puts every card you own back into your library, shuffles, and sets your life to ${app.s.startingLife}. <button class="btn small" id="cNew">Yes, reset</button></div>`;
+        extra.innerHTML = `<div class="guess">This puts every card you own back into your library, shuffles, sets your life to ${app.s.startingLife} and clears the commander damage you've taken. <button class="btn small" id="cNew">Yes, reset</button></div>`;
         $('#cNew').onclick = () => { send({ type: 'newGame' }); closeSheet(); };
       }
       if (a === 'rename') {
@@ -2981,5 +2995,71 @@ function renderSeatingSheet() {
       </div>`).join('') : '<p class="muted">Nobody else has joined yet.</p>'}`;
   $('#sheet').querySelectorAll('[data-seat]').forEach((b) => {
     b.onclick = () => send({ type: 'seat', playerId: b.dataset.seat, pos: (m.pos + Number(b.dataset.rel)) % 4 });
+  });
+}
+
+// ---------- Commander damage ----------
+// Each player keeps a count per opposing commander (partners count
+// separately). 21 from a single commander is lethal: the app marks it, but
+// like every other rule it's up to the players.
+const CMD_LETHAL = 21;
+// Every commander at the table that could hurt this player, in seat order.
+function cmdSources(p) {
+  const out = [];
+  for (const o of [...app.s.players].sort((a, b) => relOf(a, p) - relOf(b, p))) {
+    if (o.id === p.id) continue;
+    for (const c of o.commanders || []) out.push({ ...c, owner: o, dmg: (p.cmdDamage || {})[c.id] || 0 });
+  }
+  return out;
+}
+function shortName(name) { return String(name || 'Commander').split(/,| \/\/ /)[0].trim(); }
+// Small round counters, one per commander, in its owner's colour. With
+// onlyHit, commanders that haven't dealt damage are left out.
+function cmdChips(p, named, onlyHit) {
+  const list = cmdSources(p).filter((c) => !onlyHit || c.dmg > 0);
+  return list.map((c) => `<span class="cmd-chip${c.dmg >= CMD_LETHAL ? ' lethal' : ''}${c.dmg ? '' : ' zero'}" style="--owner:${c.owner.color}" title="${esc(shortName(c.name))} (${esc(c.owner.name)})">
+    <span class="cmd-dot"></span>${named ? `<span class="cmd-name">${esc(shortName(c.name))}</span>` : ''}<b>${c.dmg}</b></span>`).join('');
+}
+function setCmdStrip(el, p) {
+  const has = cmdSources(p).length > 0;
+  el.hidden = !has;
+  el.innerHTML = has ? `<span class="cmd-icon" aria-hidden="true"></span>${cmdChips(p, false, true) || '<span class="cmd-none">0</span>'}` : '';
+  el.setAttribute('aria-label', `Commander damage ${p.name} has taken`);
+}
+$('#myCmd').addEventListener('click', () => openCmdSheet(app.s.you));
+
+function openCmdSheet(focusId) {
+  openSheet('cmd', '', { focus: focusId || app.s.you });
+  renderCmdSheet();
+  const row = $(`#sheet .cmd-player[data-player="${sheetData.focus}"]`);
+  if (row && sheetData.focus !== app.s.you) row.scrollIntoView({ block: 'start' });
+}
+function renderCmdSheet() {
+  const m = me();
+  const players = [m, ...app.s.players.filter((p) => p !== m).sort((a, b) => relOf(a, m) - relOf(b, m))];
+  const any = app.s.players.some((p) => (p.commanders || []).length);
+  const scroll = $('#sheet').scrollTop;
+  $('#sheet').innerHTML = `
+    <button class="btn small sheet-close" data-close>Done</button>
+    <h3>Commander damage</h3>
+    <p class="note">Damage each player has taken from each commander. Adding damage also takes it off their life. ${CMD_LETHAL} from one commander is lethal.</p>
+    ${any ? players.map((p) => {
+      const src = cmdSources(p);
+      return `<div class="cmd-player${p.id === sheetData.focus ? ' focus' : ''}" data-player="${p.id}" style="--seat:${p.color}">
+        <div class="cmd-who"><span class="dot"></span><b>${esc(p.name)}</b>${p === m ? ' <span class="muted">(you)</span>' : ''}<span class="cmd-life${p.life <= 5 ? ' low' : ''}">Life ${p.life}</span></div>
+        ${src.length ? src.map((c) => `<div class="cmd-row${c.dmg >= CMD_LETHAL ? ' lethal' : ''}" style="--owner:${c.owner.color}">
+          <span class="cmd-from"><span class="cmd-dot"></span><span class="cmd-cname">${esc(c.name)}</span><span class="muted">${esc(c.owner.name)}</span></span>
+          <span class="cmd-count">
+            <button data-cmd="${c.id}" data-to="${p.id}" data-d="-1" aria-label="Remove 1 damage from ${esc(c.name)}"${c.dmg ? '' : ' disabled'}>−</button>
+            <span class="val">${c.dmg}</span>
+            <button data-cmd="${c.id}" data-to="${p.id}" data-d="1" aria-label="Add 1 damage from ${esc(c.name)}">+</button>
+          </span>
+          ${c.dmg >= CMD_LETHAL ? '<span class="cmd-lethal">Lethal</span>' : ''}
+        </div>`).join('') : '<p class="muted cmd-empty">No other player has a commander.</p>'}
+      </div>`;
+    }).join('') : '<p class="muted">Nobody at the table has a commander yet. Commanders come from the deck list when it\'s imported.</p>'}`;
+  $('#sheet').scrollTop = scroll;
+  $('#sheet').querySelectorAll('[data-cmd]').forEach((b) => {
+    b.onclick = () => send({ type: 'cmdDamage', playerId: b.dataset.to, cardId: b.dataset.cmd, delta: Number(b.dataset.d) });
   });
 }
