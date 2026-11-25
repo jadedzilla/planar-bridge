@@ -25,64 +25,6 @@ const MIME = {
   '.json': 'application/json',
 };
 
-// ---------- Moxfield deck import ----------
-// Moxfield has no public API and doesn't allow browsers on other sites to call it,
-// so the client asks us and we fetch the deck once, then hand back a plain text
-// list that the client's normal deck parser already understands.
-const MOXFIELD_ID = /^[A-Za-z0-9_-]{6,40}$/;
-const MOXFIELD_CACHE_MS = 1000 * 60 * 10;
-const moxfieldCache = new Map(); // id -> {at, body}
-
-function moxfieldCards(board) {
-  // v3 shape: {count, cards: {key: {quantity, card}}}; v2 shape: {key: {quantity, card}}
-  const cards = board && board.cards && typeof board.cards === 'object' ? board.cards : board;
-  return Object.values(cards || {}).filter((e) => e && e.card && e.card.name);
-}
-
-function moxfieldLine(e) {
-  const c = e.card;
-  const qty = Math.max(1, Math.min(99, parseInt(e.quantity, 10) || 1));
-  const printing = c.set && c.cn ? ` (${String(c.set).toUpperCase()}) ${c.cn}` : '';
-  return `${qty} ${c.name}${printing}`;
-}
-
-function moxfieldToText(deck) {
-  const boards = deck.boards || deck;
-  const section = (title, key) => {
-    const list = moxfieldCards(boards[key]).map(moxfieldLine);
-    return list.length ? `${title}\n${list.join('\n')}\n` : '';
-  };
-  return [
-    section('Commander', 'commanders'),
-    section('Deck', 'companions'),
-    section('Deck', 'mainboard'),
-    section('Sideboard', 'sideboard'),
-  ].filter(Boolean).join('\n');
-}
-
-async function fetchMoxfieldDeck(id) {
-  const hit = moxfieldCache.get(id);
-  if (hit && Date.now() - hit.at < MOXFIELD_CACHE_MS) return hit.body;
-  const res = await fetch(`https://api2.moxfield.com/v3/decks/all/${id}`, {
-    headers: { Accept: 'application/json', 'User-Agent': 'PlanarBridge/1.0 (+https://planar-bridge.onrender.com)' },
-    signal: AbortSignal.timeout(10000),
-  });
-  if (res.status === 404) return { status: 404, error: 'That Moxfield deck was not found. Check that it is public.' };
-  if (!res.ok) return { status: 502, error: `Moxfield returned ${res.status}. Try pasting the deck's text export instead.` };
-  const deck = await res.json();
-  const text = moxfieldToText(deck);
-  if (!text) return { status: 422, error: 'That Moxfield deck has no cards.' };
-  const body = { status: 200, name: cleanStr(deck.name, 120), text };
-  moxfieldCache.set(id, { at: Date.now(), body });
-  if (moxfieldCache.size > 500) moxfieldCache.delete(moxfieldCache.keys().next().value);
-  return body;
-}
-
-function sendJson(res, status, obj) {
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify(obj));
-}
-
 // A JPEG sent as a data URL (already shrunk on the tablet), or null if it isn't one or is too big.
 function jpegFrom(data, maxBytes) {
   const m = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/.exec(String(data || ''));
@@ -94,14 +36,6 @@ function jpegFrom(data, maxBytes) {
 // ---------- HTTP (static files) ----------
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
-  if (url.pathname.startsWith('/api/moxfield/')) {
-    const id = url.pathname.slice('/api/moxfield/'.length);
-    if (!MOXFIELD_ID.test(id)) return sendJson(res, 400, { error: 'That does not look like a Moxfield deck link.' });
-    fetchMoxfieldDeck(id)
-      .then(({ status, ...body }) => sendJson(res, status, body))
-      .catch(() => sendJson(res, 502, { error: "Couldn't reach Moxfield. Try pasting the deck's text export instead." }));
-    return;
-  }
   let p = decodeURIComponent(url.pathname);
   // A player's custom playmat image: /mat/<session code>/<player id>
   const mm = p.match(/^\/mat\/([A-Z0-9]{5})\/([\w-]{1,64})$/);

@@ -25,7 +25,7 @@ Everyone must be able to reach the same server, so for play over the internet it
 - Tap a battlefield card to tap/untap it. Transform double-faced cards, turn cards face down, add counters.
 - Library: tap to draw, drag to move the top card, search (only you see it), shuffle, mill.
 - Life totals with starting life 20, 30 or 40. The app does not track turns or enforce rules.
-- Deck import: paste a public Moxfield deck link, or a text deck list (Moxfield, Archidekt, Arena, MTGO exports). Moxfield links are fetched by the server. Card data and images come from the Scryfall API.
+- Deck import: paste a text deck list (Moxfield, Archidekt, Arena, MTGO exports). Card data and images come from the Scryfall API.
 - Saved decks: import decks on the home screen before joining, pick one, and it is shuffled into your library when you sit down. Decks are saved in the browser on that device (no accounts).
 - Custom card art: give any card in a saved deck your own picture (Art under the deck on the home screen). Pick cards one at a time, or drop a batch of files and they're matched to cards by file name. Double-faced cards can have art for each face. Everyone at the table sees it.
 - Hidden information: hands and libraries are never sent to other players.
