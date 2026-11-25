@@ -800,7 +800,7 @@ function sizeGhostFor(d, t) {
 // table, then settles when you stop.
 // The ghost's transform transition smooths every change, so it eases like a
 // real card in the air.
-const TILT_MAX = 12; // degrees
+const TILT_MAX = 20; // degrees
 function paintGhost(d) {
   const t = d.snap ? { x: 0, y: 0 } : d.tilt || { x: 0, y: 0 };
   // The carried card's tilt also turns its foil sheen.
@@ -810,7 +810,7 @@ function paintGhost(d) {
   // from the small turn a card gets when picked up (none once snapped to a pile).
   const cx = (d.scale * (d.w / 2 - d.ox)).toFixed(1), cy = (d.scale * (d.h / 2 - d.oy)).toFixed(1);
   const turn = d.snap ? 0 : 2;
-  d.ghost.style.transform = `translate(${cx}px, ${cy}px) perspective(900px) rotateX(${t.x.toFixed(2)}deg) rotateY(${t.y.toFixed(2)}deg) translate(${-cx}px, ${-cy}px) rotate(${turn}deg) scale(${d.scale.toFixed(3)})`;
+  d.ghost.style.transform = `translate(${cx}px, ${cy}px) perspective(700px) rotateX(${t.x.toFixed(2)}deg) rotateY(${t.y.toFixed(2)}deg) translate(${-cx}px, ${-cy}px) rotate(${turn}deg) scale(${d.scale.toFixed(3)})`;
 }
 
 // Over a pile (graveyard, exile, library, command zone) the carried card lets go
@@ -870,7 +870,7 @@ function tiltLoop(d) {
   }
   const clamp = (v, m) => Math.max(-m, Math.min(m, v));
   // Where the finger holds the card: held above centre, sideways motion swings the bottom back.
-  const want = { x: clamp(-vy * 7, TILT_MAX), y: clamp(vx * 7, TILT_MAX) };
+  const want = { x: clamp(-vy * 12, TILT_MAX), y: clamp(vx * 12, TILT_MAX) };
   const t = d.tilt || (d.tilt = { x: 0, y: 0 });
   if (Math.abs(want.x - t.x) + Math.abs(want.y - t.y) > 0.15) {
     t.x = want.x; t.y = want.y;
