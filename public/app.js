@@ -1915,7 +1915,9 @@ function parseDeck(text) {
     let set = null, num = null;
     const sm = rest.match(/^(.*?)\s+\(([A-Za-z0-9]{2,6})\)\s*([A-Za-z0-9\-★]+)?\s*$/);
     if (sm) { rest = sm[1]; set = sm[2].toLowerCase(); num = sm[3] || null; }
-    const name = rest.trim();
+    // Moxfield writes Rooms with one slash ("Dazzling Theater / Prop Room");
+    // Scryfall names every two-part card with two.
+    const name = rest.trim().replace(/\s+\/\s+/, ' // ');
     if (name) out.push({ qty, name, set, num, commander, finish, block });
   }
   return out;
