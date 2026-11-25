@@ -1789,7 +1789,7 @@ function openDeckSheet(opts = {}) {
     <label class="field">Deck name
       <input id="deckName" maxlength="60" placeholder="Optional, e.g. Mono-red aggro" value="${esc(editing ? editing.name : '')}">
     </label>
-    <p class="note">Paste a public Moxfield deck link, or a deck list with one card per line, like <code>4 Lightning Bolt</code>. Export from Moxfield, Archidekt, MTG Arena, MTGO and most other deckbuilders works ("Export → Text"). Lines under a <code>Sideboard</code> heading are skipped. Cards under a <code>Commander</code> heading start in your command zone.</p>
+    <p class="note">Paste a public Moxfield deck link, or a deck list with one card per line, like <code>4 Lightning Bolt</code>. Export from Moxfield, Archidekt, MTG Arena, MTGO and most other deckbuilders works ("Export → Text"). Lines under a <code>Sideboard</code> heading are skipped. Cards under a <code>Commander</code> heading start in your command zone. If the list doesn't say which card is the commander, you'll be asked.</p>
     <textarea id="deckText" spellcheck="false" placeholder="https://moxfield.com/decks/…&#10;or&#10;4 Lightning Bolt&#10;20 Mountain">${esc(saved)}</textarea>
     <div class="back-field">
       <div class="back-preview card-back-art"></div>
@@ -1827,7 +1827,10 @@ function openDeckSheet(opts = {}) {
   $('#deckLoad').onclick = () => {
     const text = $('#deckText').value;
     // Only the name or card back changed: no need to look the cards up again.
-    if (editing && text === editing.text) return finishImport(text, unpackCards(editing.cards), [], editing.colors);
+    // (Unless it's a Commander deck saved before we could tell its commander.)
+    const size = editing ? deckSize(editing) : 0;
+    const noCmdr = editing && size >= 95 && size <= 102 && !editing.cards.some((c) => c.commander);
+    if (editing && text === editing.text && !noCmdr) return finishImport(text, unpackCards(editing.cards), [], editing.colors);
     importDeck(text);
   };
   $('#sheet').querySelectorAll('[data-deck-load]').forEach((b) => { b.onclick = () => loadSavedDeck(b.dataset.deckLoad); });
@@ -1869,15 +1872,21 @@ function finishImport(text, cards, notFound, colors) {
 function parseDeck(text) {
   const out = [];
   let section = 'main';
+  // Blank lines split a list into blocks. MTGO style exports (Moxfield's
+  // included) set the commander apart that way, with no heading.
+  let block = 0, gap = false;
   for (let raw of text.split(/\r?\n/)) {
     let line = raw.trim();
-    if (!line || line.startsWith('//') || line.startsWith('#')) continue;
+    if (!line) { gap = true; continue; }
+    if (line.startsWith('//') || line.startsWith('#')) continue;
     const head = line.toLowerCase().replace(/[:\s]+$/, '');
     if (['sideboard', 'maybeboard', 'considering', 'tokens'].includes(head)) { section = 'side'; continue; }
     if (['commander', 'commanders'].includes(head)) { section = 'commander'; continue; }
     if (['deck', 'main', 'mainboard', 'main deck', 'companion'].includes(head)) { section = 'main'; continue; }
     if (/^sb:\s*/i.test(line)) continue; // MTGO style sideboard line
     if (section === 'side') continue;
+    if (gap && out.length) block++;
+    gap = false;
     const m = line.match(/^(\d+)\s*x?\s+(.+)$/i);
     let qty = 1, rest = line;
     if (m) { qty = Math.min(99, parseInt(m[1], 10)); rest = m[2]; }
@@ -1896,14 +1905,88 @@ function parseDeck(text) {
       finish = /etched/i.test(f) ? 'etched' : finish || 'foil';
       return '';
     });
+    // Archidekt style category tags: [Commander{top}], [Sideboard], [Maybeboard]
+    const cat = rest.match(/\s+\[([^\]]*)\]\s*$/);
+    if (cat) {
+      if (/\b(sideboard|maybeboard|considering)\b/i.test(cat[1])) continue;
+      if (/\bcommander\b/i.test(cat[1])) commander = true;
+    }
     rest = rest.replace(/\s+#.*$/, '').replace(/\s+\[[^\]]*\]\s*$/, '');
     let set = null, num = null;
     const sm = rest.match(/^(.*?)\s+\(([A-Za-z0-9]{2,6})\)\s*([A-Za-z0-9\-★]+)?\s*$/);
     if (sm) { rest = sm[1]; set = sm[2].toLowerCase(); num = sm[3] || null; }
     const name = rest.trim();
-    if (name) out.push({ qty, name, set, num, commander, finish });
+    if (name) out.push({ qty, name, set, num, commander, finish, block });
   }
   return out;
+}
+
+// ---------- Finding the commander ----------
+// Moxfield's text exports don't say which card is the commander: plain text
+// lists it with the rest of the deck, and MTGO style puts it in its own block
+// at the end. So for a list that looks like a Commander deck (about 100 cards,
+// one of each apart from basics) with nothing marked, we work it out, or ask.
+function canBeCommander(sc) {
+  const type = sc.type_line || (sc.card_faces && sc.card_faces[0].type_line) || '';
+  const text = [sc.oracle_text, ...(sc.card_faces || []).map((f) => f.oracle_text)].join('\n');
+  return (/legendary/i.test(type) && /creature/i.test(type.split('//')[0]))
+    || /\bbackground\b/i.test(type)
+    || /can be your commander/i.test(text);
+}
+function looksLikeCommanderDeck(entries, resolved) {
+  const total = entries.reduce((n, e) => n + e.qty, 0);
+  if (total < 95 || total > 102) return false;
+  // One of each, apart from basics and cards like Relentless Rats.
+  return entries.every((e, i) => e.qty === 1 || BASICS.has(norm(e.name).replace(/^snow-covered /, ''))
+    || /any number of cards named/i.test((resolved.get(i) || {}).oracle_text || ''));
+}
+// Returns entry indexes: {sure: [...]} when the list itself shows the commander,
+// otherwise {ask: [...candidates]}, or null when it isn't a Commander deck.
+function findCommanders(entries, resolved) {
+  if (entries.some((e) => e.commander)) return null;
+  if (!looksLikeCommanderDeck(entries, resolved)) return null;
+  const idx = entries.map((e, i) => i).filter((i) => resolved.has(i));
+  const cand = idx.filter((i) => canBeCommander(resolved.get(i)));
+  if (!cand.length) return null;
+  // A short block of 1 or 2 possible commanders set apart from the rest by a
+  // blank line, at the start or the end of the list.
+  const blocks = [...new Set(entries.map((e) => e.block))];
+  if (blocks.length > 1) {
+    for (const b of [blocks[blocks.length - 1], blocks[0]]) {
+      const inBlock = entries.map((e, i) => i).filter((i) => entries[i].block === b);
+      if (inBlock.length <= 2 && inBlock.every((i) => cand.includes(i))) return { sure: inBlock };
+    }
+  }
+  return { ask: cand };
+}
+
+// Shows the possible commanders in the deck sheet and waits for the player.
+// Resolves to the chosen entry indexes ([] for none).
+function askCommander(entries, resolved, cand) {
+  return new Promise((resolve) => {
+    const status = $('#deckStatus');
+    const box = document.createElement('div');
+    box.className = 'cmdr-pick';
+    box.innerHTML = `
+      <p class="note"><b>Which card is your commander?</b> This list doesn't say. Pick one, or two for partners or a background.</p>
+      <div class="cmdr-options">${cand.map((i, n) => `
+        <label class="check"><input type="checkbox" value="${i}"${n === 0 ? ' checked' : ''}> ${esc(resolved.get(i).name)}</label>`).join('')}
+      </div>
+      <div class="row">
+        <button class="btn small primary" data-cmdr="ok">Use as commander</button>
+        <button class="btn small" data-cmdr="none">No commander</button>
+      </div>`;
+    status.closest('.row').after(box);
+    status.textContent = '';
+    box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    const boxes = [...box.querySelectorAll('input')];
+    boxes.forEach((b) => { b.onchange = () => {
+      const on = boxes.filter((x) => x.checked);
+      if (on.length > 2) on.find((x) => x !== b).checked = false;
+    }; });
+    box.querySelector('[data-cmdr="ok"]').onclick = () => { box.remove(); resolve(boxes.filter((x) => x.checked).map((x) => +x.value)); };
+    box.querySelector('[data-cmdr="none"]').onclick = () => { box.remove(); resolve([]); };
+  });
 }
 
 function imagesOf(card) {
@@ -2042,6 +2125,11 @@ async function importDeck(text) {
     $('#deckLoad').disabled = false;
     status.textContent = 'Could not reach Scryfall (' + err.message + '). Check your connection and try again.';
     return;
+  }
+  const found = findCommanders(entries, resolved);
+  if (found) {
+    const picks = found.sure || await askCommander(entries, resolved, found.ask);
+    for (const i of picks) entries[i].commander = true;
   }
   const notFound = [];
   const cards = [];
