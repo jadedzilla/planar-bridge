@@ -161,6 +161,7 @@ function render() {
   const used = new Set();
   if (app.focus && !playerById(app.focus)) app.focus = null;
   const before = snapshotCards();
+  app.snap = before;
 
   // Edge bands
   for (const rel of [1, 2, 3]) updateEdge($(`.edge[data-rel="${rel}"]`), playerAtRel(rel), rel);
@@ -204,8 +205,16 @@ function render() {
   layoutHand();
 
   // Drop cards we no longer show anywhere
-  for (const [id, el] of app.cardEls) if (!used.has(id)) { el.remove(); app.cardEls.delete(id); }
+  for (const [id, el] of app.cardEls) {
+    if (used.has(id)) continue;
+    const was = before.get(id);
+    if (was) animateDeparture(el, id, was);
+    el.remove();
+    app.cardEls.delete(id);
+  }
   glideCards(before, mine);
+  app.prevCounts = new Map(s.players.map((p) => [p.id, { ...p.counts }]));
+  app.snap = null;
 
   renderLog();
   if (sheetKind === 'pile') renderPileSheet();
@@ -368,33 +377,93 @@ function setFocus(id) {
   if (next) playFocus(next, true);
 }
 
+// The CSS cubic-bezier() timing function, as a function of time (0..1).
+function cubicBezier(x1, y1, x2, y2) {
+  const f = (a, b, t) => 3 * a * t * (1 - t) ** 2 + 3 * b * t * t * (1 - t) + t ** 3;
+  return (x) => {
+    let lo = 0, hi = 1, t = x;
+    for (let i = 0; i < 30; i++) { t = (lo + hi) / 2; if (f(x1, x2, t) < x) lo = t; else hi = t; }
+    return f(y1, y2, t);
+  };
+}
+
+// Playmat pictures in motion. The band and the board each crop the picture to
+// fill their own shape, so while a board opens or closes the picture is drawn
+// as its own layer that is moved and scaled (cheap: no repainting) to fill
+// whatever part of it is showing, and handed back once it lines up again.
+function artGlide(p, mat, F) {
+  if (!p.mat) return null;
+  const img = new Image();
+  img.src = matUrl(p);
+  const body = $('.mat-body', mat);
+  if (!img.complete || !img.naturalWidth || !body) return null;
+  const R = body.getBoundingClientRect();
+  const bc = getComputedStyle(body);
+  const inset = (k) => parseFloat(bc.getPropertyValue(k)) || 0;
+  // the board's surface, in the opening's coordinates, once it has landed
+  const box = { x: R.left + inset('--ml') - F.left, y: R.top + inset('--mt') - F.top };
+  box.w = R.right - inset('--mr') - F.left - box.x;
+  box.h = R.bottom - inset('--mb') - F.top - box.y;
+  const fit = (r) => {
+    const k = Math.max(r.w / img.naturalWidth, r.h / img.naturalHeight);
+    const w = img.naturalWidth * k, h = img.naturalHeight * k;
+    return { x: r.x + (r.w - w) / 2, y: r.y + (r.h - h) / 2, w, h };
+  };
+  const decoding = [];
+  // Each picture is drawn at the largest size it reaches and only ever
+  // scaled down, and decoded up front, so nothing blanks or blurs mid-way.
+  const stack = (kind, base) => {
+    const el = document.createElement('div');
+    el.className = `art-stack ${kind}`;
+    const pic = new Image();
+    pic.className = 'pic';
+    pic.alt = '';
+    pic.src = img.src;
+    if (pic.decode) decoding.push(pic.decode().catch(() => {}));
+    Object.assign(pic.style, { left: `${base.x}px`, top: `${base.y}px`, width: `${base.w}px`, height: `${base.h}px` });
+    el.append(pic);
+    // the transform that puts the picture at rect r (in the stack's coordinates)
+    const at = (r) => `translate(${(r.x - base.x).toFixed(2)}px, ${(r.y - base.y).toFixed(2)}px) scale(${(r.w / base.w).toFixed(5)})`;
+    return { el, pic, at };
+  };
+  const landed = fit(box);
+  const surface = stack('board', { x: landed.x - box.x, y: landed.y - box.y, w: landed.w, h: landed.h });
+  surface.el.style.boxShadow = getComputedStyle(body, '::before').boxShadow;
+  body.prepend(surface.el);
+  body.classList.add('art-moving');
+  const full = { x: 0, y: 0, w: F.width, h: F.height };
+  const band = stack('band', fit(full));
+  return { body, box, fit, surface, band, ready: Promise.all(decoding) };
+}
+
 function playFocus(id, opening, done) {
   const area = $('#focusArea');
   const mat = area.firstElementChild;
   const p = playerById(id);
   const band = p && $(`.edge[data-player="${p.id}"]`);
-  if (reduceMotion.matches || !mat || !band || !area.animate) { done && done(); return; }
+  if (reduceMotion.matches || !mat || !band) { done && done(); return; }
   const rel = relOf(p);
   const F = area.getBoundingClientRect();
   const E = band.getBoundingClientRect();
   const bs = getComputedStyle(band);
-  const out = -60; // past the playmat's edge, so its shadow isn't cut off
   // Clip that matches the band exactly (insets may reach outside the playmat)
   const px = (v) => `${v.toFixed(1)}px`;
   const radii = (r) => r.map(px).join(' ');
   const bandR = ['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft'].map((c) => parseFloat(bs[`border${c}Radius`]) || 0);
   const shape = (ins, r) => `inset(${ins.map(px).join(' ')} round ${radii(r)})`;
-  const from = shape([E.top - F.top, F.right - E.right, F.bottom - E.bottom, E.left - F.left], bandR);
-  const to = shape([0, 0, 0, 0], [12, 12, 12, 12]);
-  // The board moves as one piece with the band: its far edge rides the
-  // band's outer edge the whole way, like a drawer being pulled out.
-  const slide = rel === 2 ? `translateY(${px(E.bottom - F.bottom)})`
-    : rel === 1 ? `translateX(${px(E.right - F.right)})` : `translateX(${px(E.left - F.left)})`;
 
   // A copy of the band's surface laid over the board, fading as it opens up
   const cover = document.createElement('div');
   cover.className = 'focus-cover';
-  for (const k of ['backgroundImage', 'backgroundColor', 'backgroundSize', 'backgroundPosition', 'backgroundRepeat', 'backgroundBlendMode']) cover.style[k] = bs[k];
+  const art = artGlide(p, mat, F);
+  const Er = { x: E.left - F.left, y: E.top - F.top, w: E.width, h: E.height };
+  let bandArt = null;
+  if (art) {
+    bandArt = art.band;
+    cover.append(bandArt.el);
+  } else {
+    for (const k of ['backgroundImage', 'backgroundColor', 'backgroundSize', 'backgroundPosition', 'backgroundRepeat', 'backgroundBlendMode']) cover.style[k] = bs[k];
+  }
   cover.style.setProperty('--seat', p.color);
   area.append(cover);
 
@@ -408,28 +477,96 @@ function playFocus(id, opening, done) {
   const dx = F.width / 2 - (E.left + E.width / 2 - F.left);
   const dy = F.height / 2 - (E.top + E.height / 2 - F.top);
 
-  // One curve and one clock for every part, so it all moves together
-  const timing = opening
-    ? { duration: 560, easing: 'cubic-bezier(.32, .72, 0, 1)', fill: 'both' }
-    : { duration: 440, easing: 'cubic-bezier(.32, .72, 0, 1)', fill: 'both', direction: 'reverse' };
+  // Every part is set from one progress value on each frame. (Browsers run
+  // transform and opacity animations on another thread from clip-path ones,
+  // so separate animations drift apart and leave gaps at the edges.)
+  const duration = opening ? 560 : 440;
+  const ease = cubicBezier(0.32, 0.72, 0, 1);
+  const lerp = (a, b, k) => a + (b - a) * k;
+  const fromIns = [E.top - F.top, F.right - E.right, F.bottom - E.bottom, E.left - F.left];
+  // The board moves as one piece with the band: its far edge rides the
+  // band's outer edge the whole way, like a drawer being pulled out.
+  const sx = rel === 2 ? 0 : (rel === 1 ? E.right - F.right : E.left - F.left);
+  const sy = rel === 2 ? E.bottom - F.bottom : 0;
+  // opacity at progress k, from [k, value] stops
+  const ramp = (stops, k) => {
+    for (let i = 1; i < stops.length; i++) {
+      const [k0, v0] = stops[i - 1], [k1, v1] = stops[i];
+      if (k <= k1) return lerp(v0, v1, (k - k0) / (k1 - k0 || 1));
+    }
+    return stops[stops.length - 1][1];
+  };
+  const apply = (k) => {
+    area.style.clipPath = shape(fromIns.map((v) => lerp(v, 0, k)), bandR.map((r) => lerp(r, 12, k)));
+    mat.style.transform = `translate(${px(sx * (1 - k))}, ${px(sy * (1 - k))})`;
+    cover.style.opacity = ramp([[0, 1], [0.08, 1], [0.6, 0], [1, 0]], k).toFixed(3);
+    tab.style.opacity = ramp([[0, 1], [0.35, 0], [1, 0]], k).toFixed(3);
+    tab.style.transform = `translate(${px(dx * k)}, ${px(dy * k)})`;
+    if (art) {
+      // the picture on the board fills the part of the board that is showing,
+      // and the band's fading copy fills the opening, so neither jumps
+      const open = { x: lerp(Er.x, 0, k), y: lerp(Er.y, 0, k) };
+      open.w = lerp(Er.x + Er.w, F.width, k) - open.x;
+      open.h = lerp(Er.y + Er.h, F.height, k) - open.y;
+      const S = { x: art.box.x + sx * (1 - k), y: art.box.y + sy * (1 - k), w: art.box.w, h: art.box.h };
+      const x0 = Math.max(S.x, open.x), y0 = Math.max(S.y, open.y);
+      const x1 = Math.min(S.x + S.w, open.x + open.w), y1 = Math.min(S.y + S.h, open.y + open.h);
+      const seen = x1 - x0 > 1 && y1 - y0 > 1 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : S;
+      const r = art.fit(seen);
+      art.surface.pic.style.transform = art.surface.at({ x: r.x - S.x, y: r.y - S.y, w: r.w, h: r.h });
+      art.band.pic.style.transform = art.band.at(art.fit(open));
+    }
+  };
+  // The shadow sits beside the opening (its own would be clipped away),
+  // following its shape and deepening as it grows.
+  const shadow = document.createElement('div');
+  shadow.className = 'focus-shadow';
+  area.before(shadow);
+  const applyShadow = (k) => {
+    // under the part of the opening the board itself fills (from the side
+    // bands the opening starts taller than the board)
+    const ins = fromIns.map((v) => lerp(v, 0, k));
+    const mx = sx * (1 - k), my = sy * (1 - k);
+    const x0 = Math.max(ins[3], mx), y0 = Math.max(ins[0], my);
+    const x1 = Math.min(F.width - ins[1], mx + F.width), y1 = Math.min(F.height - ins[2], my + F.height);
+    Object.assign(shadow.style, {
+      left: px(area.offsetLeft + x0), top: px(area.offsetTop + y0),
+      width: px(Math.max(0, x1 - x0)), height: px(Math.max(0, y1 - y0)),
+      borderRadius: radii(bandR.map((r) => lerp(r, 12, k))),
+      opacity: (k * k).toFixed(3),
+    });
+  };
   area.classList.add('animating');
-  const anims = [
-    area.animate([{ clipPath: from }, { clipPath: to }], timing),
-    mat.animate([{ transform: slide }, { transform: 'none' }], timing),
-    cover.animate([{ opacity: 1 }, { opacity: 1, offset: 0.08 }, { opacity: 0, offset: 0.6 }, { opacity: 0 }], timing),
-    tab.animate([{ transform: 'none', opacity: 1 }, { opacity: 0, offset: 0.35 }, { transform: `translate(${px(dx)}, ${px(dy)})`, opacity: 0 }], timing),
-  ];
-  focusAnim = anims[0];
-  Promise.all(anims.map((a) => a.finished)).catch(() => {}).then(() => {
+  apply(opening ? 0 : 1);
+  applyShadow(opening ? 0 : 1);
+
+  const finish = () => {
     // leave the closed board hidden behind the band before taking the clip off
     if (!opening) area.hidden = true;
     area.classList.remove('animating');
+    area.style.clipPath = '';
+    mat.style.transform = '';
+    if (art) { art.surface.el.remove(); art.body.classList.remove('art-moving'); }
     cover.remove();
     tab.remove();
-    anims.forEach((a) => a.cancel());
+    shadow.remove();
     focusAnim = null;
     done && done();
-  });
+  };
+  focusAnim = { finish };
+  let start = 0;
+  const frame = (now) => {
+    if (!start) start = now;
+    const t = Math.min(1, (now - start) / duration);
+    const k = ease(opening ? t : 1 - t);
+    apply(k);
+    applyShadow(k);
+    if (t < 1) requestAnimationFrame(frame);
+    else finish();
+  };
+  // pictures are decoded first so they never draw blank mid-way
+  Promise.race([art ? art.ready : null, new Promise((r) => setTimeout(r, art ? 150 : 0))])
+    .then(() => requestAnimationFrame(frame));
 }
 
 function updateEdge(el, p, rel) {
@@ -473,23 +610,81 @@ function landingSpot(sender, receiver) {
   return { x: 0.25 + r * 0.45, y: 0.03 + Math.random() * 0.06 };
 }
 
-// Animate a card that just arrived from another player, sliding in from their side.
+// Where another player's mat is, as seen from this tablet: off the edge their
+// band sits on (straight down for my own side), or their seat in the table view.
+const SPIN = { 0: 0, 1: -25, 2: 180, 3: 25 };
+function seatPoint(pid) {
+  const p = playerById(pid);
+  if (!p) return null;
+  if (app.tableView) {
+    const frame = $(`.tv-cell[data-player="${pid}"] .tv-frame`);
+    const r = frame && frame.getBoundingClientRect();
+    if (r && r.width) return { x: r.left + r.width / 2, y: r.top + r.height / 2, spin: 0, near: true };
+  }
+  const rel = relOf(p);
+  const band = rel && $(`.edge[data-rel="${rel}"]`);
+  const r = band && band.getBoundingClientRect();
+  const cx = r && r.width ? r.left + r.width / 2 : innerWidth / 2;
+  const cy = r && r.height ? r.top + r.height / 2 : innerHeight / 2;
+  const at = { 0: [innerWidth / 2, innerHeight * 1.3], 1: [-innerWidth * 0.3, cy], 2: [cx, -innerHeight * 0.35], 3: [innerWidth * 1.3, cy] }[rel];
+  return { x: at[0], y: at[1], spin: SPIN[rel] };
+}
+
+// A card that came from a mat this tablet can't see slides in from that mat's
+// side. Cards that were already in sight glide across instead (glideCards), and
+// a card you carried over yourself already landed where you let go of it.
 const arrived = new Set();
 function maybeAnimateArrival(el, c, holder) {
-  if (!c.from || holder.id !== app.s.you || c.from === app.s.you) return;
-  // A card you carried over yourself already landed where you let go of it, and
-  // in the table view every mat is in sight, so the card just glides across.
-  if (app.drops.has(c.id) || app.settled.has(c.id) || app.tableView) return;
+  if (!c.from || c.from === holder.id) return;
+  if (app.drops.has(c.id) || app.settled.has(c.id) || (app.snap && app.snap.has(c.id))) return;
   const key = c.id + ':' + c.sentAt;
   if (arrived.has(key)) return;
   arrived.add(key);
-  if (Date.now() - c.sentAt > 3000 || !el.animate) return;
-  const sender = playerById(c.from);
-  if (!sender) return;
-  const rel = relOf(sender);
-  const off = { 1: 'translate(-60vw, 0) rotate(-25deg)', 2: 'translate(0, -70vh) rotate(180deg)', 3: 'translate(60vw, 0) rotate(25deg)' }[rel];
-  if (!off) return;
-  requestAnimationFrame(() => el.animate([{ transform: off, opacity: 0.6 }, { transform: 'none', opacity: 1 }], { duration: 520, easing: 'cubic-bezier(.15,.85,.25,1)' }));
+  if (Date.now() - c.sentAt > 3000 || !el.animate || reduceMotion.matches || app.tvSwitching) return;
+  requestAnimationFrame(() => {
+    const p = el.isConnected && seatPoint(c.from);
+    const r = el.getBoundingClientRect();
+    if (!p || !r.width) return;
+    const z = zoomOf(el);
+    const dx = (p.x - (r.left + r.width / 2)) / z;
+    const dy = (p.y - (r.top + r.height / 2)) / z;
+    el.animate([
+      { translate: `${dx}px ${dy}px`, rotate: `${p.spin}deg`, scale: p.near ? '0.4' : '1', opacity: p.near ? 0 : 0.6, zIndex: 50 },
+      { translate: '0px 0px', rotate: '0deg', scale: '1', opacity: 1, zIndex: 50 },
+    ], { duration: p.near ? 460 : 560, easing: 'cubic-bezier(.15,.85,.25,1)' });
+  });
+}
+
+// A card that left for a mat this tablet can't see slides off toward it.
+function animateDeparture(el, id, was) {
+  if (app.drops.has(id) || app.settled.has(id) || reduceMotion.matches || app.tvSwitching || !el.animate) return;
+  const to = destinationOf(id, was.holder);
+  if (!to || to === was.holder) return;
+  const p = seatPoint(to);
+  if (!p) return;
+  const g = el.cloneNode(true);
+  g.classList.add('ghost', 'leaving');
+  g.classList.remove('tapped', 'dragging-src', 'lifted');
+  Object.assign(g.style, { left: was.x - was.w / 2 + 'px', top: was.y - was.h / 2 + 'px', width: was.w + 'px', height: was.h + 'px', transform: `rotate(${was.turn}deg)`, visibility: '', transition: 'none' });
+  document.body.appendChild(g);
+  const dx = p.x - was.x, dy = p.y - was.y;
+  g.animate([
+    { transform: `rotate(${was.turn}deg)`, opacity: 1 },
+    { transform: `translate(${dx}px, ${dy}px) rotate(${was.turn + p.spin}deg) scale(${p.near ? 0.4 : 0.9})`, opacity: p.near ? 0 : 1 },
+  ], { duration: p.near ? 460 : 520, easing: 'cubic-bezier(.45,.05,.6,1)', fill: 'forwards' }).onfinish = () => g.remove();
+}
+
+// Which player a card went to. Cards still in sight say so; one that went into
+// a hand or library this tablet can't see is placed by whose pile grew.
+function destinationOf(id, from) {
+  const now = findCard(id);
+  if (now) return now.player.id;
+  if (!app.prevCounts) return null;
+  const grew = app.s.players.filter((p) => {
+    const was = app.prevCounts.get(p.id);
+    return was && ['hand', 'library'].some((z) => p.counts[z] > was[z]);
+  });
+  return grew.length === 1 ? grew[0].id : null;
 }
 
 function syncChildren(parent, els) {
@@ -646,7 +841,10 @@ function snapshotCards() {
   for (const [id, el] of app.cardEls) {
     if (!el.isConnected) continue;
     const r = el.getBoundingClientRect();
-    if (r.width) snap.set(id, { x: r.left + r.width / 2, y: r.top + r.height / 2, w: el.offsetWidth * zoomOf(el) });
+    if (!r.width) continue;
+    const z = zoomOf(el);
+    const at = el.closest('[data-player]');
+    snap.set(id, { x: r.left + r.width / 2, y: r.top + r.height / 2, w: el.offsetWidth * z, h: el.offsetHeight * z, turn: cardTurn(el), holder: at && at.dataset.player });
   }
   const lib = app.matEls.get(app.s && app.s.you);
   const back = lib && $('.library-back', lib);
@@ -671,9 +869,10 @@ function settleDrops() {
     el.style.visibility = '';
     if (!el.isConnected || reduceMotion.matches || !el.animate) continue;
     const r = el.getBoundingClientRect();
-    const dx = dp.x - (r.left + r.width / 2);
-    const dy = dp.y - (r.top + r.height / 2);
-    const s = el.offsetWidth ? dp.w / (el.offsetWidth * zoomOf(el)) : 1;
+    const z = zoomOf(el);
+    const dx = (dp.x - (r.left + r.width / 2)) / z;
+    const dy = (dp.y - (r.top + r.height / 2)) / z;
+    const s = el.offsetWidth ? dp.w / (el.offsetWidth * z) : 1;
     const turn = dp.rot - cardTurn(el);
     el.animate([
       { translate: `${dx}px ${dy}px`, scale: String(s), rotate: `${turn}deg`, zIndex: 50 },
@@ -708,9 +907,10 @@ function glideCards(before, mine) {
     const dx = from.x - (r.left + r.width / 2);
     const dy = from.y - (r.top + r.height / 2);
     if (Math.hypot(dx, dy) < 3) continue;
-    const s = from.w && el.offsetWidth ? from.w / (el.offsetWidth * zoomOf(el)) : 1;
+    const z = zoomOf(el);
+    const s = from.w && el.offsetWidth ? from.w / (el.offsetWidth * z) : 1;
     el.animate(
-      [{ translate: `${dx}px ${dy}px`, scale: String(s) }, { translate: '0px 0px', scale: '1' }],
+      [{ translate: `${dx / z}px ${dy / z}px`, scale: String(s) }, { translate: '0px 0px', scale: '1' }],
       { duration: 300, easing: 'cubic-bezier(.25,.8,.3,1)' }
     );
   }
@@ -918,7 +1118,7 @@ function cardEl(c, zone, holder, used) {
   if (!el) { el = makeCardEl(); app.cardEls.set(c.id, el); }
   used.add(c.id);
   paintCard(el, c, zone, holder);
-  if (zone === 'battlefield') maybeAnimateArrival(el, c, holder);
+  if (zone === 'battlefield' || zone === 'hand') maybeAnimateArrival(el, c, holder);
   return el;
 }
 
@@ -1230,12 +1430,25 @@ function tryFlick(d) {
 }
 
 function sendFlick(d, to, vx, vy) {
-  highlight(null);
-  const g = d.ghost;
   const sp = Math.hypot(vx, vy);
   const dist = Math.max(innerWidth, innerHeight) * 1.2;
-  const tx = (vx / sp) * dist;
-  const ty = (vy / sp) * dist;
+  throwGhost(d, (vx / sp) * dist, (vy / sp) * dist, vx > 0 ? 40 : -40);
+  const spot = landingSpot(me(), to);
+  send({ type: 'move', cardId: d.id, toPlayer: to.id, toZone: 'battlefield', x: spot.x, y: spot.y });
+  toast(`Sent to ${to.name}`);
+}
+
+// Dropped on another player's band: the card carries on off the table toward them.
+function sendToBand(d, to) {
+  const p = seatPoint(to.id);
+  const r = d.ghost.getBoundingClientRect();
+  if (!p) return cleanupDrag(d);
+  throwGhost(d, p.x - (r.left + r.width / 2), p.y - (r.top + r.height / 2), p.spin, 0.9);
+}
+
+function throwGhost(d, tx, ty, spin, k = 0.85) {
+  highlight(null);
+  const g = d.ghost;
   d.src.style.visibility = 'hidden';
   app.settled.set(d.id, performance.now());
   const finish = () => {
@@ -1245,12 +1458,9 @@ function sendFlick(d, to, vx, vy) {
   };
   if (g.animate) {
     g.style.transition = 'none';
-    g.animate([{ transform: g.style.transform }, { transform: `translate(${tx}px, ${ty}px) rotate(${vx > 0 ? 40 : -40}deg) scale(${(d.scale * 0.85).toFixed(3)})` }],
+    g.animate([{ transform: g.style.transform }, { transform: `translate(${tx}px, ${ty}px) rotate(${spin}deg) scale(${(d.scale * k).toFixed(3)})` }],
       { duration: 380, easing: 'cubic-bezier(.3,.6,.4,1)', fill: 'forwards' }).onfinish = finish;
   } else finish();
-  const spot = landingSpot(me(), to);
-  send({ type: 'move', cardId: d.id, toPlayer: to.id, toZone: 'battlefield', x: spot.x, y: spot.y });
-  toast(`Sent to ${to.name}`);
 }
 
 // Put a carried card back where it came from, smoothly (nowhere to drop it).
@@ -1289,6 +1499,8 @@ function finishDrag(d, x, y) {
   } else if (!commandOk(d, target)) {
     returnGhost(d);
     return toast('Only your commander goes in your command zone.');
+  } else if (target.classList.contains('edge') && target.dataset.zone === 'battlefield' && !reduceMotion.matches) {
+    sendToBand(d, playerById(target.dataset.player));
   } else releaseGhost(d);
   if (!target) return;
   // Where the card's top-left lands, at the size it will have there.
@@ -1789,8 +2001,8 @@ function openDeckSheet(opts = {}) {
     <label class="field">Deck name
       <input id="deckName" maxlength="60" placeholder="Optional, e.g. Mono-red aggro" value="${esc(editing ? editing.name : '')}">
     </label>
-    <p class="note">Paste a public Moxfield deck link, or a deck list with one card per line, like <code>4 Lightning Bolt</code>. Export from Moxfield, Archidekt, MTG Arena, MTGO and most other deckbuilders works ("Export → Text"). Lines under a <code>Sideboard</code> heading are skipped. Cards under a <code>Commander</code> heading start in your command zone. If the list doesn't say which card is the commander, you'll be asked.</p>
-    <textarea id="deckText" spellcheck="false" placeholder="https://moxfield.com/decks/…&#10;or&#10;4 Lightning Bolt&#10;20 Mountain">${esc(saved)}</textarea>
+    <p class="note">Paste a deck list, one card per line, like <code>4 Lightning Bolt</code>. Export from Moxfield, Archidekt, MTG Arena, MTGO and most other deckbuilders works ("Export → Text"). Lines under a <code>Sideboard</code> heading are skipped. Cards under a <code>Commander</code> heading start in your command zone. If the list doesn't say which card is the commander, you'll be asked.</p>
+    <textarea id="deckText" spellcheck="false" placeholder="4 Lightning Bolt&#10;20 Mountain">${esc(saved)}</textarea>
     <div class="back-field">
       <div class="back-preview card-back-art"></div>
       <div class="back-side">
@@ -1810,7 +2022,7 @@ function openDeckSheet(opts = {}) {
     </div>
     <div class="guess">${mode === 'landing'
       ? 'Saved decks stay on this device, in this browser. Cards are matched on Scryfall once, when you save.'
-      : 'Loading a deck replaces all of your current cards, wherever they are on the table, and shuffles them into your library.'} Moxfield links work for public decks. For other deckbuilders, paste the exported list.</div>`,
+      : 'Loading a deck replaces all of your current cards, wherever they are on the table, and shuffles them into your library.'} Deckbuilder links aren't supported yet; paste the exported list.</div>`,
   { mode, editId: editing ? editing.id : null });
   app.backDraft = editing ? editing.cardBack || '' : '';
   showBackDraft();
@@ -2079,42 +2291,11 @@ async function scryfallLookupOne(name) {
   return null;
 }
 
-// A pasted Moxfield deck link, e.g. https://www.moxfield.com/decks/AbC123xyz
-function moxfieldId(text) {
-  const m = String(text).trim().match(/^(?:https?:\/\/)?(?:www\.)?moxfield\.com\/decks\/([A-Za-z0-9_-]+)\/?(?:[?#].*)?$/i);
-  return m ? m[1] : null;
-}
-
-// The server fetches the deck (Moxfield can't be called from the browser) and
-// returns it as a plain text list.
-async function fetchMoxfieldDeck(id) {
-  const res = await fetch('/api/moxfield/' + encodeURIComponent(id), { headers: { Accept: 'application/json' } });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'Could not load that Moxfield deck.');
-  return data;
-}
-
 async function importDeck(text) {
   const status = $('#deckStatus');
-  // Keep what the player pasted (the link) as the deck's saved text.
-  const pasted = text.trim();
-  try { localStorage.setItem('ps:deck', pasted); } catch {}
-  const mox = moxfieldId(pasted);
-  if (mox) {
-    $('#deckLoad').disabled = true;
-    status.textContent = 'Getting the deck from Moxfield…';
-    try {
-      const deck = await fetchMoxfieldDeck(mox);
-      text = deck.text;
-      if (deck.name && $('#deckName') && !$('#deckName').value.trim()) $('#deckName').value = deck.name;
-    } catch (err) {
-      $('#deckLoad').disabled = false;
-      status.textContent = err.message;
-      return;
-    }
-  }
   const entries = parseDeck(text);
-  if (!entries.length) { $('#deckLoad').disabled = false; return (status.textContent = 'No cards found in that list.'); }
+  if (!entries.length) return (status.textContent = 'No cards found in that list.');
+  try { localStorage.setItem('ps:deck', text); } catch {}
   $('#deckLoad').disabled = true;
   status.textContent = 'Looking up cards on Scryfall…';
   const resolved = new Map(); // entry index -> scryfall card
@@ -2177,7 +2358,7 @@ async function importDeck(text) {
     for (let k = 0; k < e.qty; k++) cards.push({ name, img: im.img, back: im.back, commander: e.commander, finish: e.finish });
   });
   $('#deckLoad').disabled = false;
-  finishImport(mox ? pasted : text, cards, notFound, sortColors(colors));
+  finishImport(text, cards, notFound, sortColors(colors));
 }
 
 // ---------- Custom card art ----------
