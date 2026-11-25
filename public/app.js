@@ -486,9 +486,36 @@ function makeCardEl() {
 }
 
 // ---------- Foil ----------
-// A foil card lying on the table keeps its sheen still. Only a card you've
-// picked up catches the light differently: its sheen shifts as you carry it
-// and as it tilts with its momentum (see paintGhost).
+// A foil card lying on the table keeps its sheen still unless something changes
+// how light hits it: the mouse moving over that card, tilting the tablet, or
+// carrying the card (see paintGhost, which adds its momentum tilt).
+// Mouse over a foil card: the sheen follows the pointer across that card only.
+let hoverFoil = null;
+document.addEventListener('pointermove', (e) => {
+  if (e.pointerType === 'touch') return;
+  const el = !drag && e.target.closest && e.target.closest('.card[data-finish]:not(.ghost)');
+  const card = el && el.dataset.finish ? el : null;
+  if (hoverFoil && hoverFoil !== card) { hoverFoil.style.setProperty('--hx', '0'); hoverFoil.style.setProperty('--hy', '0'); }
+  hoverFoil = card;
+  if (!card) return;
+  const r = card.getBoundingClientRect();
+  card.style.setProperty('--hx', ((e.clientX - r.left) / r.width - 0.5).toFixed(3));
+  card.style.setProperty('--hy', ((e.clientY - r.top) / r.height - 0.5).toFixed(3));
+}, { passive: true });
+// Tilting the tablet turns every foil card's sheen, relative to how it was held.
+let tiltBase = null;
+addEventListener('deviceorientation', (e) => {
+  if (e.beta == null || e.gamma == null) return;
+  if (!tiltBase) tiltBase = { b: e.beta, g: e.gamma };
+  tiltBase.b += (e.beta - tiltBase.b) * 0.004; tiltBase.g += (e.gamma - tiltBase.g) * 0.004; // re-centre slowly
+  const clamp = (v) => Math.max(-1, Math.min(1, v));
+  document.documentElement.style.setProperty('--dev-x', clamp((e.gamma - tiltBase.g) / 25).toFixed(3));
+  document.documentElement.style.setProperty('--dev-y', clamp((e.beta - tiltBase.b) / 25).toFixed(3));
+});
+// iPad and iPhone only share motion after a tap asks for it.
+if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function') {
+  addEventListener('pointerup', () => { DeviceOrientationEvent.requestPermission().catch(() => {}); }, { once: true });
+}
 
 // Every tablet keeps both faces of each card on the playmats (battlefields),
 // and every card back at the table, loaded and decoded ahead of time. Then a flip, transform or
