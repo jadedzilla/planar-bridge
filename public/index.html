@@ -69,11 +69,19 @@
       <div class="edge" data-rel="2"></div>
       <div class="edge" data-rel="3"></div>
       <div id="focusArea" class="focus-area" hidden></div>
+      <div id="tableView" class="table-view" hidden>
+        <div class="tv-grid">
+          <div class="tv-cell"></div><div class="tv-cell"></div>
+          <div class="tv-cell"></div><div class="tv-cell"></div>
+        </div>
+        <button class="btn tv-back" data-act="table">Back to my mat</button>
+      </div>
     </main>
     <div class="hud hud-tl">
       <button class="code-chip" id="inviteBtn" title="Share invite link"><svg class="link-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1.2 1.2"/><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1.2-1.2"/></svg><b id="codeLabel"></b></button>
     </div>
     <div class="hud hud-tr">
+      <button class="btn round" data-act="table" title="See the whole table">Table</button>
       <button class="btn round" data-act="draw" title="Draw a card">Draw</button>
       <button class="btn round icon" data-act="more" title="Menu" aria-label="Menu">☰</button>
     </div>

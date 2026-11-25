@@ -176,9 +176,15 @@ function render() {
     updateMat(mat, focusP, used);
   } else syncChildren(focus, []);
 
-  // My playmat
+  // My playmat (in the table view it sits in its seat with everyone else's)
   const myMat = matFor(mine);
-  syncChildren($('#myArea'), [myMat]);
+  if (app.tableView) {
+    syncChildren($('#myArea'), []);
+    renderTableView(used);
+  } else {
+    syncChildren($('#myArea'), [myMat]);
+    for (const cell of document.querySelectorAll('.tv-cell')) syncChildren(cell, []);
+  }
   updateMat(myMat, mine, used);
   $('#myLife').textContent = mine.life;
   $('#myLife').classList.toggle('low', mine.life <= 5);
@@ -204,6 +210,137 @@ function render() {
   renderLog();
   if (sheetKind === 'pile') renderPileSheet();
   if (sheetKind === 'seating') renderSeatingSheet();
+}
+
+// ---------- Table view ----------
+// Every playmat at once, laid out like the table seen from above: you in the
+// bottom-left seat, then clockwise the player on your left, the one across
+// (diagonally opposite) and the one on your right. Each mat is laid out at
+// exactly the size of your own full-screen mat and then shrunk to fit its seat,
+// so opening the view is just the camera pulling back from your mat, and
+// closing it pushes back in to the very same picture.
+const TV_SEATS = [1, 2, 0, 3]; // grid order: top-left, top-right, bottom-left, bottom-right
+function renderTableView(used) {
+  const cells = document.querySelectorAll('.tv-cell');
+  TV_SEATS.forEach((rel, i) => {
+    const cell = cells[i];
+    const p = rel === 0 ? me() : playerAtRel(rel);
+    if (!cell.firstElementChild) {
+      cell.innerHTML = `<div class="tv-label"><span class="dot"></span><b class="nm"></b><span class="tv-sub"></span>
+        <span class="tv-life"><button data-tvlife="-1" aria-label="Lose 1 life">−</button><span class="val"></span><button data-tvlife="1" aria-label="Gain 1 life">+</button></span></div>
+        <div class="tv-frame"><div class="tv-stage my-area"></div><div class="tv-empty">Empty seat</div></div>`;
+      cell.querySelectorAll('[data-tvlife]').forEach((btn) => {
+        btn.onclick = () => cell.dataset.player && send({ type: 'life', playerId: cell.dataset.player, delta: Number(btn.dataset.tvlife) });
+      });
+    }
+    cell.classList.toggle('empty', !p);
+    cell.classList.toggle('mine', rel === 0);
+    const stage = $('.tv-stage', cell);
+    if (!p) {
+      delete cell.dataset.player;
+      cell.style.removeProperty('--seat');
+      syncChildren(stage, []);
+      return;
+    }
+    cell.dataset.player = p.id;
+    cell.style.setProperty('--seat', p.color);
+    $('.nm', cell).textContent = p.name;
+    $('.tv-sub', cell).textContent = rel === 0 ? '(you)' : `Hand ${p.counts.hand}` + (p.connected ? '' : ' · offline');
+    const lv = $('.tv-life .val', cell);
+    lv.textContent = p.life;
+    lv.classList.toggle('low', p.life <= 5);
+    const mat = matFor(p);
+    syncChildren(stage, [mat]);
+    if (p !== me()) updateMat(mat, p, used);
+  });
+  layoutTableView();
+}
+
+// Size every stage like the full-screen table, then scale it down so the cloth
+// of the playmat fills its seat (the empty margins around it are cropped).
+function layoutTableView() {
+  if (!app.tableView) return;
+  const table = $('#table');
+  const W = table.clientWidth, H = table.clientHeight;
+  const frames = document.querySelectorAll('.tv-frame');
+  frames.forEach((f) => {
+    const stage = $('.tv-stage', f);
+    stage.style.width = W + 'px';
+    stage.style.height = H + 'px';
+  });
+  // Where the cloth sits inside a full-size mat (the same for every mat)
+  const body = $('.mat-body', matFor(me()));
+  const cs = getComputedStyle(body, '::before');
+  const cx = parseFloat(cs.left) || 0, cy = parseFloat(cs.top) || 0;
+  const cw = W - cx - (parseFloat(cs.right) || 0), ch = H - cy - (parseFloat(cs.bottom) || 0);
+  const f0 = frames[0];
+  const k = Math.min(f0.clientWidth / cw, f0.clientHeight / ch) * 0.96; // room for its shadow
+  app.tvK = k;
+  frames.forEach((f) => {
+    const stage = $('.tv-stage', f);
+    stage.style.left = (f.clientWidth - cw * k) / 2 - cx * k + 'px';
+    stage.style.top = (f.clientHeight - ch * k) / 2 - cy * k + 'px';
+    stage.style.transform = `scale(${k})`;
+  });
+}
+window.addEventListener('resize', () => app.tableView && !tvAnim && render());
+
+// How much a card's spot on screen is shrunk (mats in the table view are scaled down).
+function zoomOf(el) {
+  return app.tableView && el && el.closest && el.closest('.tv-stage') ? app.tvK || 1 : 1;
+}
+
+let tvAnim = null;
+function setTableView(on) {
+  if (tvAnim || !app.s || on === !!app.tableView) return;
+  const game = $('#game');
+  const grid = $('.tv-grid');
+  const myMat = matFor(me());
+  const still = reduceMotion.matches || !grid.animate;
+  const fade = (from, to, ms) => !still && document.querySelectorAll('.tv-label, .tv-back').forEach((el) => el.animate([{ opacity: from }, { opacity: to }], { duration: ms, easing: 'ease', fill: 'both' }));
+  if (on) {
+    app.focus = null;
+    closeSheet();
+    const full = $('#myArea').getBoundingClientRect();
+    app.tableView = true;
+    game.classList.add('table-mode');
+    $('#tableView').hidden = false;
+    app.tvSwitching = true;
+    render();
+    app.tvSwitching = false;
+    if (still) return;
+    const zoom = zoomOnto(grid, myMat.parentElement.getBoundingClientRect(), full);
+    tvAnim = grid.animate([{ transform: zoom }, { transform: 'none' }], { duration: 750, easing: 'cubic-bezier(.45,0,.15,1)' });
+    fade(0, 1, 750);
+    tvAnim.onfinish = tvAnim.oncancel = () => { tvAnim = null; };
+  } else {
+    const done = () => {
+      app.tableView = false;
+      game.classList.remove('table-mode', 'table-leaving');
+      $('#tableView').hidden = true;
+      app.tvSwitching = true;
+      render();
+      app.tvSwitching = false;
+      grid.getAnimations().forEach((x) => x.cancel());
+      document.querySelectorAll('.tv-label, .tv-back').forEach((el) => el.getAnimations().forEach((x) => x.cancel()));
+      tvAnim = null;
+    };
+    if (still) return done();
+    game.classList.add('table-leaving');
+    const zoom = zoomOnto(grid, myMat.parentElement.getBoundingClientRect(), $('#myArea').getBoundingClientRect());
+    tvAnim = grid.animate([{ transform: 'none' }, { transform: zoom }], { duration: 650, easing: 'cubic-bezier(.45,0,.15,1)', fill: 'forwards' });
+    fade(1, 0, 450);
+    tvAnim.onfinish = done;
+  }
+}
+
+// The transform that makes the rect `at` (inside el) cover the rect `to`.
+function zoomOnto(el, at, to) {
+  const g = el.getBoundingClientRect();
+  const s = to.width / at.width;
+  const tx = to.left - g.left - s * (at.left - g.left);
+  const ty = to.top - g.top - s * (at.top - g.top);
+  return `translate(${tx}px, ${ty}px) scale(${s})`;
 }
 
 function matFor(p) {
@@ -340,6 +477,9 @@ function landingSpot(sender, receiver) {
 const arrived = new Set();
 function maybeAnimateArrival(el, c, holder) {
   if (!c.from || holder.id !== app.s.you || c.from === app.s.you) return;
+  // A card you carried over yourself already landed where you let go of it, and
+  // in the table view every mat is in sight, so the card just glides across.
+  if (app.drops.has(c.id) || app.settled.has(c.id) || app.tableView) return;
   const key = c.id + ':' + c.sentAt;
   if (arrived.has(key)) return;
   arrived.add(key);
@@ -506,13 +646,13 @@ function snapshotCards() {
   for (const [id, el] of app.cardEls) {
     if (!el.isConnected) continue;
     const r = el.getBoundingClientRect();
-    if (r.width) snap.set(id, { x: r.left + r.width / 2, y: r.top + r.height / 2, w: el.offsetWidth });
+    if (r.width) snap.set(id, { x: r.left + r.width / 2, y: r.top + r.height / 2, w: el.offsetWidth * zoomOf(el) });
   }
   const lib = app.matEls.get(app.s && app.s.you);
   const back = lib && $('.library-back', lib);
   if (back && back.isConnected) {
     const r = back.getBoundingClientRect();
-    snap.set('LIBRARY', { x: r.left + r.width / 2, y: r.top + r.height / 2, w: back.offsetWidth });
+    snap.set('LIBRARY', { x: r.left + r.width / 2, y: r.top + r.height / 2, w: back.offsetWidth * zoomOf(back) });
   }
   return snap;
 }
@@ -533,7 +673,7 @@ function settleDrops() {
     const r = el.getBoundingClientRect();
     const dx = dp.x - (r.left + r.width / 2);
     const dy = dp.y - (r.top + r.height / 2);
-    const s = el.offsetWidth ? dp.w / el.offsetWidth : 1;
+    const s = el.offsetWidth ? dp.w / (el.offsetWidth * zoomOf(el)) : 1;
     const turn = dp.rot - cardTurn(el);
     el.animate([
       { translate: `${dx}px ${dy}px`, scale: String(s), rotate: `${turn}deg`, zIndex: 50 },
@@ -548,6 +688,8 @@ function glideCards(before, mine) {
   const libBefore = app.libCount;
   app.libCount = mine.counts.library;
   if (reduceMotion.matches || !Element.prototype.animate) return;
+  // Switching to or from the table view moves no cards: the camera moves instead.
+  if (app.tvSwitching) return;
   const now = performance.now();
   for (const [id, t] of app.settled) if (now - t > 1200) app.settled.delete(id);
   const lib = before.get('LIBRARY');
@@ -566,7 +708,7 @@ function glideCards(before, mine) {
     const dx = from.x - (r.left + r.width / 2);
     const dy = from.y - (r.top + r.height / 2);
     if (Math.hypot(dx, dy) < 3) continue;
-    const s = from.w && el.offsetWidth ? from.w / el.offsetWidth : 1;
+    const s = from.w && el.offsetWidth ? from.w / (el.offsetWidth * zoomOf(el)) : 1;
     el.animate(
       [{ translate: `${dx}px ${dy}px`, scale: String(s) }, { translate: '0px 0px', scale: '1' }],
       { duration: 300, easing: 'cubic-bezier(.25,.8,.3,1)' }
@@ -828,7 +970,7 @@ document.addEventListener('pointerdown', (e) => {
     pointerId: e.pointerId,
     sx: e.clientX, sy: e.clientY, x: e.clientX, y: e.clientY,
     offX: e.clientX - rect.left, offY: e.clientY - rect.top,
-    w: src.offsetWidth, h: src.offsetHeight,
+    w: src.offsetWidth * zoomOf(src), h: src.offsetHeight * zoomOf(src),
     started: false,
     long: false,
     samples: [{ x: e.clientX, y: e.clientY, t: performance.now() }],
@@ -936,9 +1078,9 @@ function cardWidthIn(t) {
   if (!t) return null;
   if (t.id === 'handBar') return parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hand-cw')) || null;
   const spot = t.querySelector && t.querySelector('.spot');
-  if (spot) return spot.offsetWidth;
+  if (spot) return spot.offsetWidth * zoomOf(spot);
   const mat = t.closest('.mat');
-  if (mat) return parseFloat(mat.style.getPropertyValue('--card-w')) || null;
+  if (mat) return (parseFloat(mat.style.getPropertyValue('--card-w')) || 0) * zoomOf(mat) || null;
   return null;
 }
 
@@ -1068,6 +1210,7 @@ function tryFlick(d) {
   const vy = (b.y - a.y) / dt;
   const speed = Math.hypot(vx, vy);
   if (speed < FLICK_SPEED || b.t - a.t > 160) return false;
+  if (app.tableView) return false; // every mat is in reach: just drag
   // Don't treat a quick drop onto a specific zone (pile, hand, band) as a flick
   // A quick drop onto a pile or another player's band is a normal drop, not a flick.
   const target = dropTargetAt(b.x, b.y);
@@ -2273,6 +2416,7 @@ $('#game').addEventListener('click', (e) => {
   if (a === 'shuffle') send({ type: 'shuffle' });
   if (a === 'log') { $('#logPanel').hidden = !$('#logPanel').hidden; renderLog(); }
   if (a === 'more') openMoreMenu();
+  if (a === 'table') setTableView(!app.tableView);
 });
 
 $('#inviteBtn').onclick = async () => {
@@ -2292,6 +2436,7 @@ function openMoreMenu() {
     <div class="sheet-actions" style="margin-top:12px">
       <button class="btn primary" data-m="deck">Load deck</button>
       <button class="btn" data-m="fullscreen">${document.fullscreenElement || document.webkitFullscreenElement ? 'Exit full screen' : 'Full screen'}</button>
+      <button class="btn" data-m="table">Table view</button>
       <button class="btn" data-m="seating">Seating</button>
       <button class="btn" data-m="playmat">Playmat</button>
       <button class="btn" data-m="log">Game log</button>
@@ -2307,6 +2452,7 @@ function openMoreMenu() {
       <li>Flick a card toward another player to send it across to their tablet. Each edge of your screen faces the player sitting on that side (set this up under Seating).</li>
       <li>You can also drag a card onto a player's edge band, or tap or long-press a card for a menu with every move.</li>
       <li>Tap a player's edge band to see their playmat. Tap Close to put it away.</li>
+      <li>Tap Table to see everyone's playmat at once, laid out like the table. You can drag cards between any of them there.</li>
       <li>Tap the Hand tab to tuck your hand away and use the whole screen.</li>
       <li>Click or tap a card on the battlefield to tap / untap it. Right-click or long-press for more.</li>
       <li>Tap your library to draw. Drag it to move the top card somewhere.</li>
@@ -2319,6 +2465,7 @@ function openMoreMenu() {
       const extra = $('#moreExtra');
       if (a === 'deck') return openDeckSheet();
       if (a === 'seating') return openSeatingSheet();
+      if (a === 'table') { closeSheet(); return setTableView(true); }
       if (a === 'playmat') return openPlaymatSheet();
       if (a === 'log') { closeSheet(); $('#logPanel').hidden = false; return renderLog(); }
       if (a === 'fullscreen') { toggleFullscreen(); return closeSheet(); }
