@@ -64,7 +64,7 @@ button { font: inherit; color: inherit; }
 
 /* ---------- Playmat ---------- */
 .mat { position: relative; display: flex; flex-direction: column; min-height: 0; border-radius: 12px; background: var(--panel); border: 2px solid var(--seat, var(--line)); overflow: hidden; }
-.mat.me { box-shadow: 0 0 0 1px var(--seat) inset; }
+.mat.me { box-shadow: none; }
 .mat-head { display: flex; align-items: center; gap: 8px; padding: 5px 8px; background: var(--panel-2); flex-wrap: wrap; }
 .mat-name { font-weight: 600; display: flex; align-items: center; gap: 6px; min-width: 0; }
 .mat-name .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--seat); flex: none; }
@@ -110,8 +110,8 @@ button { font: inherit; color: inherit; }
 .ghost { position: fixed; z-index: 1000; pointer-events: none; transform: rotate(3deg) scale(1.05); box-shadow: 0 12px 30px rgba(0,0,0,.6); transition: none; }
 
 /* ---------- Hand drawer ---------- */
-.handbar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 40; height: var(--hand-h); padding: 4px 10px; padding-bottom: max(4px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; background: rgba(20,23,28,.88); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); border-top: 2px solid var(--my-seat, var(--line)); transition: transform .25s ease; }
-.hand-tab { position: absolute; left: 50%; top: -30px; transform: translateX(-50%); height: 30px; padding: 0 16px; border-radius: 10px 10px 0 0; border: 2px solid var(--my-seat, var(--line)); border-bottom: none; background: rgba(20,23,28,.95); color: var(--text); font-size: 13px; cursor: pointer; touch-action: manipulation; }
+.handbar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 40; height: var(--hand-h); padding: 4px 10px; padding-bottom: max(4px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; background: rgba(20,23,28,.88); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); border-top: 1px solid var(--line); transition: transform .25s ease; }
+.hand-tab { position: absolute; left: 50%; top: -30px; transform: translateX(-50%); height: 30px; padding: 0 16px; border-radius: 10px 10px 0 0; border: 1px solid var(--line); border-bottom: none; background: rgba(20,23,28,.95); color: var(--text); font-size: 13px; cursor: pointer; touch-action: manipulation; }
 .hand-tab .caret { display: inline-block; transition: transform .25s; }
 .game.hand-hidden .handbar { transform: translateY(100%); }
 .game.hand-hidden .hand-tab .caret { transform: rotate(180deg); }
@@ -128,7 +128,7 @@ button { font: inherit; color: inherit; }
 .my-area .mat-head { display: none; }
 .my-area .mat-body { padding: var(--edge) var(--edge) calc(var(--hand-h) + 6px); transition: padding .25s ease; }
 .game.hand-hidden .my-area .mat-body { padding-bottom: 8px; }
-.my-area .battlefield { border-radius: 16px; box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--my-seat, #fff) 35%, transparent); }
+.my-area .battlefield { border-radius: 16px; }
 
 /* Edge bands: one per other player, on the side of the screen facing them */
 .edge { position: absolute; z-index: 20; display: flex; align-items: center; justify-content: center; gap: 8px; background: color-mix(in srgb, var(--seat, #333) 22%, var(--panel)); border: 2px solid var(--seat, var(--line)); cursor: pointer; font-size: 13px; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
@@ -286,15 +286,15 @@ html, body { background: var(--table); }
 .pile { border: 1px solid rgba(255,255,255,.1); border-radius: 10px; background: rgba(0,0,0,.08); }
 .pile-label { text-transform: uppercase; letter-spacing: 1.2px; font-size: 9px; color: rgba(255,255,255,.32); text-shadow: none; }
 
-/* --- Cards: a thin sleeve rim in the owner's colour and a soft shadow --- */
+/* --- Cards: unsleeved, the card image runs to the edge, with a soft shadow --- */
 .card {
-  --sleeve: color-mix(in srgb, var(--owner-sleeve, #3a3f48) 80%, #101114);
+  --sleeve: #1c1d20; /* only shows behind an image that hasn't loaded yet */
   background: var(--sleeve);
-  border-radius: 5.5%/4%;
+  border-radius: 4.8%/3.5%;
   box-shadow: 0 1px 1px rgba(0,0,0,.35), 0 3px 8px rgba(0,0,0,.28);
   transition: transform .3s cubic-bezier(.3,1.3,.55,1), box-shadow .2s ease;
 }
-.card img { inset: 2.2% 2.4%; width: 95.2%; height: 95.6%; border-radius: 4.5%/3.3%; }
+.card img { inset: 0; width: 100%; height: 100%; border-radius: inherit; }
 .card .cname { inset: 7%; }
 .card:active:not(.back) { box-shadow: 0 2px 3px rgba(0,0,0,.3), 0 12px 22px rgba(0,0,0,.35); }
 .card.tapped { transform: rotate(90deg); }
@@ -303,7 +303,7 @@ html, body { background: var(--table); }
 
 /* Card back (our own simple design): matte face with one embossed ring */
 .card.back, .library-back {
-  border: 3px solid var(--sleeve);
+  border: none;
   background:
     radial-gradient(circle at 50% 50%, transparent 0 17%, rgba(255,255,255,.14) 17.5% 19%, transparent 19.5%),
     radial-gradient(circle at 50% 51%, transparent 0 17%, rgba(0,0,0,.25) 17.5% 19%, transparent 19.5%),
@@ -313,9 +313,9 @@ html, body { background: var(--table); }
 
 /* --- Library: a stack whose height follows the card count --- */
 .library-back {
-  --sleeve: color-mix(in srgb, var(--seat, #555) 80%, #101114);
+  --sleeve: #3a3b3f; /* the stacked card edges below the top card */
   position: relative;
-  border-radius: 5.5%/4%;
+  border-radius: 4.8%/3.5%;
   box-shadow: var(--stack, none), 0 4px 10px rgba(0,0,0,.35);
   transform: translate(calc(var(--depth, 0px) * -.5), calc(var(--depth, 0px) * -1));
 }
@@ -568,7 +568,7 @@ html, body { background: var(--table); }
 
 /* --- Command zone: one card-sized spot in the top left of the mat --- */
 .piles.command-col { order: -1; }
-.pile.command .spot { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--seat, #fff) 45%, rgba(255,255,255,.15)); }
+.pile.command .spot { box-shadow: inset 0 0 0 1px rgba(255,255,255,.13); }
 
 /* Uploaded playmats get a fine grain so they read as a cloth mat, not a flat
    photo (the edge band and preview still use the SVG noise grain). */
@@ -743,7 +743,7 @@ html, body { background: var(--table); }
    (--tilt-x / --tilt-y). */
 :root { --dev-x: 0; --dev-y: 0; }
 .card { --fx: .5; --fy: .5; --fx0: .5; --fy0: .5; --tilt-x: 0; --tilt-y: 0; --hx: 0; --hy: 0; }
-.card .foil { display: none; position: absolute; inset: 2.2% 2.4%; border-radius: 4.5%/3.3%; pointer-events: none; }
+.card .foil { display: none; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; }
 .card[data-finish] .foil {
   --sx: calc(var(--hx) * 1.2 + var(--dev-x) * .9); --sy: calc(var(--hy) * 1.2 + var(--dev-y) * .9);
   transition: background-position .35s ease-out; /* eases back to still when the mouse leaves */
