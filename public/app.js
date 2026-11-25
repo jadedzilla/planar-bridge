@@ -377,33 +377,93 @@ function setFocus(id) {
   if (next) playFocus(next, true);
 }
 
+// The CSS cubic-bezier() timing function, as a function of time (0..1).
+function cubicBezier(x1, y1, x2, y2) {
+  const f = (a, b, t) => 3 * a * t * (1 - t) ** 2 + 3 * b * t * t * (1 - t) + t ** 3;
+  return (x) => {
+    let lo = 0, hi = 1, t = x;
+    for (let i = 0; i < 30; i++) { t = (lo + hi) / 2; if (f(x1, x2, t) < x) lo = t; else hi = t; }
+    return f(y1, y2, t);
+  };
+}
+
+// Playmat pictures in motion. The band and the board each crop the picture to
+// fill their own shape, so while a board opens or closes the picture is drawn
+// as its own layer that is moved and scaled (cheap: no repainting) to fill
+// whatever part of it is showing, and handed back once it lines up again.
+function artGlide(p, mat, F) {
+  if (!p.mat) return null;
+  const img = new Image();
+  img.src = matUrl(p);
+  const body = $('.mat-body', mat);
+  if (!img.complete || !img.naturalWidth || !body) return null;
+  const R = body.getBoundingClientRect();
+  const bc = getComputedStyle(body);
+  const inset = (k) => parseFloat(bc.getPropertyValue(k)) || 0;
+  // the board's surface, in the opening's coordinates, once it has landed
+  const box = { x: R.left + inset('--ml') - F.left, y: R.top + inset('--mt') - F.top };
+  box.w = R.right - inset('--mr') - F.left - box.x;
+  box.h = R.bottom - inset('--mb') - F.top - box.y;
+  const fit = (r) => {
+    const k = Math.max(r.w / img.naturalWidth, r.h / img.naturalHeight);
+    const w = img.naturalWidth * k, h = img.naturalHeight * k;
+    return { x: r.x + (r.w - w) / 2, y: r.y + (r.h - h) / 2, w, h };
+  };
+  const decoding = [];
+  // Each picture is drawn at the largest size it reaches and only ever
+  // scaled down, and decoded up front, so nothing blanks or blurs mid-way.
+  const stack = (kind, base) => {
+    const el = document.createElement('div');
+    el.className = `art-stack ${kind}`;
+    const pic = new Image();
+    pic.className = 'pic';
+    pic.alt = '';
+    pic.src = img.src;
+    if (pic.decode) decoding.push(pic.decode().catch(() => {}));
+    Object.assign(pic.style, { left: `${base.x}px`, top: `${base.y}px`, width: `${base.w}px`, height: `${base.h}px` });
+    el.append(pic);
+    // the transform that puts the picture at rect r (in the stack's coordinates)
+    const at = (r) => `translate(${(r.x - base.x).toFixed(2)}px, ${(r.y - base.y).toFixed(2)}px) scale(${(r.w / base.w).toFixed(5)})`;
+    return { el, pic, at };
+  };
+  const landed = fit(box);
+  const surface = stack('board', { x: landed.x - box.x, y: landed.y - box.y, w: landed.w, h: landed.h });
+  surface.el.style.boxShadow = getComputedStyle(body, '::before').boxShadow;
+  body.prepend(surface.el);
+  body.classList.add('art-moving');
+  const full = { x: 0, y: 0, w: F.width, h: F.height };
+  const band = stack('band', fit(full));
+  return { body, box, fit, surface, band, ready: Promise.all(decoding) };
+}
+
 function playFocus(id, opening, done) {
   const area = $('#focusArea');
   const mat = area.firstElementChild;
   const p = playerById(id);
   const band = p && $(`.edge[data-player="${p.id}"]`);
-  if (reduceMotion.matches || !mat || !band || !area.animate) { done && done(); return; }
+  if (reduceMotion.matches || !mat || !band) { done && done(); return; }
   const rel = relOf(p);
   const F = area.getBoundingClientRect();
   const E = band.getBoundingClientRect();
   const bs = getComputedStyle(band);
-  const out = -60; // past the playmat's edge, so its shadow isn't cut off
   // Clip that matches the band exactly (insets may reach outside the playmat)
   const px = (v) => `${v.toFixed(1)}px`;
   const radii = (r) => r.map(px).join(' ');
   const bandR = ['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft'].map((c) => parseFloat(bs[`border${c}Radius`]) || 0);
   const shape = (ins, r) => `inset(${ins.map(px).join(' ')} round ${radii(r)})`;
-  const from = shape([E.top - F.top, F.right - E.right, F.bottom - E.bottom, E.left - F.left], bandR);
-  const to = shape([0, 0, 0, 0], [12, 12, 12, 12]);
-  // The board moves as one piece with the band: its far edge rides the
-  // band's outer edge the whole way, like a drawer being pulled out.
-  const slide = rel === 2 ? `translateY(${px(E.bottom - F.bottom)})`
-    : rel === 1 ? `translateX(${px(E.right - F.right)})` : `translateX(${px(E.left - F.left)})`;
 
   // A copy of the band's surface laid over the board, fading as it opens up
   const cover = document.createElement('div');
   cover.className = 'focus-cover';
-  for (const k of ['backgroundImage', 'backgroundColor', 'backgroundSize', 'backgroundPosition', 'backgroundRepeat', 'backgroundBlendMode']) cover.style[k] = bs[k];
+  const art = artGlide(p, mat, F);
+  const Er = { x: E.left - F.left, y: E.top - F.top, w: E.width, h: E.height };
+  let bandArt = null;
+  if (art) {
+    bandArt = art.band;
+    cover.append(bandArt.el);
+  } else {
+    for (const k of ['backgroundImage', 'backgroundColor', 'backgroundSize', 'backgroundPosition', 'backgroundRepeat', 'backgroundBlendMode']) cover.style[k] = bs[k];
+  }
   cover.style.setProperty('--seat', p.color);
   area.append(cover);
 
@@ -417,28 +477,96 @@ function playFocus(id, opening, done) {
   const dx = F.width / 2 - (E.left + E.width / 2 - F.left);
   const dy = F.height / 2 - (E.top + E.height / 2 - F.top);
 
-  // One curve and one clock for every part, so it all moves together
-  const timing = opening
-    ? { duration: 560, easing: 'cubic-bezier(.32, .72, 0, 1)', fill: 'both' }
-    : { duration: 440, easing: 'cubic-bezier(.32, .72, 0, 1)', fill: 'both', direction: 'reverse' };
+  // Every part is set from one progress value on each frame. (Browsers run
+  // transform and opacity animations on another thread from clip-path ones,
+  // so separate animations drift apart and leave gaps at the edges.)
+  const duration = opening ? 560 : 440;
+  const ease = cubicBezier(0.32, 0.72, 0, 1);
+  const lerp = (a, b, k) => a + (b - a) * k;
+  const fromIns = [E.top - F.top, F.right - E.right, F.bottom - E.bottom, E.left - F.left];
+  // The board moves as one piece with the band: its far edge rides the
+  // band's outer edge the whole way, like a drawer being pulled out.
+  const sx = rel === 2 ? 0 : (rel === 1 ? E.right - F.right : E.left - F.left);
+  const sy = rel === 2 ? E.bottom - F.bottom : 0;
+  // opacity at progress k, from [k, value] stops
+  const ramp = (stops, k) => {
+    for (let i = 1; i < stops.length; i++) {
+      const [k0, v0] = stops[i - 1], [k1, v1] = stops[i];
+      if (k <= k1) return lerp(v0, v1, (k - k0) / (k1 - k0 || 1));
+    }
+    return stops[stops.length - 1][1];
+  };
+  const apply = (k) => {
+    area.style.clipPath = shape(fromIns.map((v) => lerp(v, 0, k)), bandR.map((r) => lerp(r, 12, k)));
+    mat.style.transform = `translate(${px(sx * (1 - k))}, ${px(sy * (1 - k))})`;
+    cover.style.opacity = ramp([[0, 1], [0.08, 1], [0.6, 0], [1, 0]], k).toFixed(3);
+    tab.style.opacity = ramp([[0, 1], [0.35, 0], [1, 0]], k).toFixed(3);
+    tab.style.transform = `translate(${px(dx * k)}, ${px(dy * k)})`;
+    if (art) {
+      // the picture on the board fills the part of the board that is showing,
+      // and the band's fading copy fills the opening, so neither jumps
+      const open = { x: lerp(Er.x, 0, k), y: lerp(Er.y, 0, k) };
+      open.w = lerp(Er.x + Er.w, F.width, k) - open.x;
+      open.h = lerp(Er.y + Er.h, F.height, k) - open.y;
+      const S = { x: art.box.x + sx * (1 - k), y: art.box.y + sy * (1 - k), w: art.box.w, h: art.box.h };
+      const x0 = Math.max(S.x, open.x), y0 = Math.max(S.y, open.y);
+      const x1 = Math.min(S.x + S.w, open.x + open.w), y1 = Math.min(S.y + S.h, open.y + open.h);
+      const seen = x1 - x0 > 1 && y1 - y0 > 1 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : S;
+      const r = art.fit(seen);
+      art.surface.pic.style.transform = art.surface.at({ x: r.x - S.x, y: r.y - S.y, w: r.w, h: r.h });
+      art.band.pic.style.transform = art.band.at(art.fit(open));
+    }
+  };
+  // The shadow sits beside the opening (its own would be clipped away),
+  // following its shape and deepening as it grows.
+  const shadow = document.createElement('div');
+  shadow.className = 'focus-shadow';
+  area.before(shadow);
+  const applyShadow = (k) => {
+    // under the part of the opening the board itself fills (from the side
+    // bands the opening starts taller than the board)
+    const ins = fromIns.map((v) => lerp(v, 0, k));
+    const mx = sx * (1 - k), my = sy * (1 - k);
+    const x0 = Math.max(ins[3], mx), y0 = Math.max(ins[0], my);
+    const x1 = Math.min(F.width - ins[1], mx + F.width), y1 = Math.min(F.height - ins[2], my + F.height);
+    Object.assign(shadow.style, {
+      left: px(area.offsetLeft + x0), top: px(area.offsetTop + y0),
+      width: px(Math.max(0, x1 - x0)), height: px(Math.max(0, y1 - y0)),
+      borderRadius: radii(bandR.map((r) => lerp(r, 12, k))),
+      opacity: (k * k).toFixed(3),
+    });
+  };
   area.classList.add('animating');
-  const anims = [
-    area.animate([{ clipPath: from }, { clipPath: to }], timing),
-    mat.animate([{ transform: slide }, { transform: 'none' }], timing),
-    cover.animate([{ opacity: 1 }, { opacity: 1, offset: 0.08 }, { opacity: 0, offset: 0.6 }, { opacity: 0 }], timing),
-    tab.animate([{ transform: 'none', opacity: 1 }, { opacity: 0, offset: 0.35 }, { transform: `translate(${px(dx)}, ${px(dy)})`, opacity: 0 }], timing),
-  ];
-  focusAnim = anims[0];
-  Promise.all(anims.map((a) => a.finished)).catch(() => {}).then(() => {
+  apply(opening ? 0 : 1);
+  applyShadow(opening ? 0 : 1);
+
+  const finish = () => {
     // leave the closed board hidden behind the band before taking the clip off
     if (!opening) area.hidden = true;
     area.classList.remove('animating');
+    area.style.clipPath = '';
+    mat.style.transform = '';
+    if (art) { art.surface.el.remove(); art.body.classList.remove('art-moving'); }
     cover.remove();
     tab.remove();
-    anims.forEach((a) => a.cancel());
+    shadow.remove();
     focusAnim = null;
     done && done();
-  });
+  };
+  focusAnim = { finish };
+  let start = 0;
+  const frame = (now) => {
+    if (!start) start = now;
+    const t = Math.min(1, (now - start) / duration);
+    const k = ease(opening ? t : 1 - t);
+    apply(k);
+    applyShadow(k);
+    if (t < 1) requestAnimationFrame(frame);
+    else finish();
+  };
+  // pictures are decoded first so they never draw blank mid-way
+  Promise.race([art ? art.ready : null, new Promise((r) => setTimeout(r, art ? 150 : 0))])
+    .then(() => requestAnimationFrame(frame));
 }
 
 function updateEdge(el, p, rel) {
