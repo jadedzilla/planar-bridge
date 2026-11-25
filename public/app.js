@@ -920,7 +920,7 @@ function glideCards(before, mine) {
 // the table into its place in the fan, and turns face up as it joins the hand.
 // Only this tablet shows my hand, so nobody else sees the face.
 // Several cards at once (draw 7) leave the deck one after another.
-const DRAW_MS = 640;
+const DRAW_MS = 620;
 const DRAW_GAP_MS = 120;
 function flyDrawnCard(el, c, lib, i) {
   const r = el.getBoundingClientRect();
@@ -948,21 +948,32 @@ function flyDrawnCard(el, c, lib, i) {
 
   el.classList.add('incoming');
   const delay = i * DRAW_GAP_MS;
-  // The path: off the deck, up toward you at the top of the arc, then down into the fan.
-  const path = fly.animate([
-    { translate: `${dx}px ${dy}px`, scale: String(s0), rotate: '0deg', offset: 0 },
-    { translate: `${dx}px ${dy - 6}px`, scale: String(s0 * 1.06), rotate: '-2deg', offset: 0.12, easing: 'cubic-bezier(.3,0,.4,1)' },
-    { translate: `${dx * 0.42}px ${dy * 0.5 - Math.min(60, h * 0.4)}px`, scale: String(Math.max(1.12, (s0 + 1) / 2 * 1.18)), rotate: `${turn / 2 - 6}deg`, offset: 0.55, easing: 'cubic-bezier(.35,.05,.35,1)' },
-    { translate: '0px 0px', scale: '1', rotate: `${turn}deg`, offset: 1 },
-  ], { duration: DRAW_MS, delay, fill: 'both' });
-  // The turn over: face down until it's on its way, edge-on just past the top of
-  // the arc, face up before it settles.
+  // One continuous sweep: a gentle curve from the deck into the fan, timed by a
+  // single easing so it never slows down partway. It rises toward you (grows a
+  // little) through the middle of the flight and tilts as it goes.
+  const lift = Math.min(70, h * 0.45);
+  const cxp = dx * 0.5, cyp = dy * 0.5 - lift; // control point of the curve
+  const steps = 24, frames = [];
+  for (let k = 0; k <= steps; k++) {
+    const t = k / steps, u = 1 - t, bump = Math.sin(Math.PI * t);
+    const x = u * u * dx + 2 * u * t * cxp;
+    const y = u * u * dy + 2 * u * t * cyp;
+    frames.push({
+      translate: `${x.toFixed(1)}px ${y.toFixed(1)}px`,
+      scale: (s0 + (1 - s0) * t + 0.14 * bump).toFixed(3),
+      rotate: `${(turn * t - 7 * bump).toFixed(2)}deg`,
+    });
+  }
+  const timing = { duration: DRAW_MS, delay, fill: 'both', easing: 'cubic-bezier(.4,.1,.2,1)' };
+  const path = fly.animate(frames, timing);
+  // The turn over runs on the same clock: it starts once the card is off the
+  // deck and is face up just before it settles.
   fly.firstChild.animate([
     { transform: 'perspective(900px) rotateY(180deg)', offset: 0 },
-    { transform: 'perspective(900px) rotateY(180deg)', offset: 0.38, easing: 'cubic-bezier(.45,0,.3,1)' },
-    { transform: 'perspective(900px) rotateY(0deg)', offset: 0.9 },
+    { transform: 'perspective(900px) rotateY(180deg)', offset: 0.22, easing: 'cubic-bezier(.45,0,.55,1)' },
+    { transform: 'perspective(900px) rotateY(0deg)', offset: 0.82 },
     { transform: 'perspective(900px) rotateY(0deg)', offset: 1 },
-  ], { duration: DRAW_MS, delay, fill: 'both' });
+  ], timing);
 
   const land = () => {
     fly.remove();
