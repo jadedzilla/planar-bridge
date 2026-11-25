@@ -231,26 +231,63 @@ function setFocus(id) {
   if (next) playFocus(next, true);
 }
 
-// Where a playmat picture sits in the band and on the board (both cropped to
-// fill, like background-size: cover), in the opening's coordinates.
-function artGlide(p, mat, F, E) {
+// The CSS cubic-bezier() timing function, as a function of time (0..1).
+function cubicBezier(x1, y1, x2, y2) {
+  const f = (a, b, t) => 3 * a * t * (1 - t) ** 2 + 3 * b * t * t * (1 - t) + t ** 3;
+  return (x) => {
+    let lo = 0, hi = 1, t = x;
+    for (let i = 0; i < 30; i++) { t = (lo + hi) / 2; if (f(x1, x2, t) < x) lo = t; else hi = t; }
+    return f(y1, y2, t);
+  };
+}
+
+// Playmat pictures in motion. The band and the board each crop the picture to
+// fill their own shape, so while a board opens or closes the picture is drawn
+// as its own layer that is moved and scaled (cheap: no repainting) to fill
+// whatever part of it is showing, and handed back once it lines up again.
+function artGlide(p, mat, F) {
   if (!p.mat) return null;
   const img = new Image();
   img.src = matUrl(p);
-  if (!img.complete || !img.naturalWidth) return null;
   const body = $('.mat-body', mat);
-  if (!body) return null;
+  if (!img.complete || !img.naturalWidth || !body) return null;
   const R = body.getBoundingClientRect();
   const bc = getComputedStyle(body);
   const inset = (k) => parseFloat(bc.getPropertyValue(k)) || 0;
-  const box = { left: R.left + inset('--ml'), top: R.top + inset('--mt'), right: R.right - inset('--mr'), bottom: R.bottom - inset('--mb') };
-  const fit = (b) => {
-    const w = b.right - b.left, h = b.bottom - b.top;
-    const k = Math.max(w / img.naturalWidth, h / img.naturalHeight);
-    const iw = img.naturalWidth * k, ih = img.naturalHeight * k;
-    return { x: b.left + (w - iw) / 2 - F.left, y: b.top + (h - ih) / 2 - F.top, w: iw, h: ih };
+  // the board's surface, in the opening's coordinates, once it has landed
+  const box = { x: R.left + inset('--ml') - F.left, y: R.top + inset('--mt') - F.top };
+  box.w = R.right - inset('--mr') - F.left - box.x;
+  box.h = R.bottom - inset('--mb') - F.top - box.y;
+  const fit = (r) => {
+    const k = Math.max(r.w / img.naturalWidth, r.h / img.naturalHeight);
+    const w = img.naturalWidth * k, h = img.naturalHeight * k;
+    return { x: r.x + (r.w - w) / 2, y: r.y + (r.h - h) / 2, w, h };
   };
-  return { body, from: fit(E), to: fit(box), box: { x: box.left - F.left, y: box.top - F.top } };
+  const decoding = [];
+  // Each picture is drawn at the largest size it reaches and only ever
+  // scaled down, and decoded up front, so nothing blanks or blurs mid-way.
+  const stack = (kind, base) => {
+    const el = document.createElement('div');
+    el.className = `art-stack ${kind}`;
+    const pic = new Image();
+    pic.className = 'pic';
+    pic.alt = '';
+    pic.src = img.src;
+    if (pic.decode) decoding.push(pic.decode().catch(() => {}));
+    Object.assign(pic.style, { left: `${base.x}px`, top: `${base.y}px`, width: `${base.w}px`, height: `${base.h}px` });
+    el.append(pic);
+    // the transform that puts the picture at rect r (in the stack's coordinates)
+    const at = (r) => `translate(${(r.x - base.x).toFixed(2)}px, ${(r.y - base.y).toFixed(2)}px) scale(${(r.w / base.w).toFixed(5)})`;
+    return { el, pic, at };
+  };
+  const landed = fit(box);
+  const surface = stack('board', { x: landed.x - box.x, y: landed.y - box.y, w: landed.w, h: landed.h });
+  surface.el.style.boxShadow = getComputedStyle(body, '::before').boxShadow;
+  body.prepend(surface.el);
+  body.classList.add('art-moving');
+  const full = { x: 0, y: 0, w: F.width, h: F.height };
+  const band = stack('band', fit(full));
+  return { body, box, fit, surface, band, ready: Promise.all(decoding) };
 }
 
 function playFocus(id, opening, done) {
@@ -279,8 +316,15 @@ function playFocus(id, opening, done) {
   // A copy of the band's surface laid over the board, fading as it opens up
   const cover = document.createElement('div');
   cover.className = 'focus-cover';
-  for (const k of ['backgroundImage', 'backgroundColor', 'backgroundSize', 'backgroundPosition', 'backgroundRepeat', 'backgroundBlendMode']) cover.style[k] = bs[k];
-  const art = artGlide(p, mat, F, E);
+  const art = artGlide(p, mat, F);
+  const Er = { x: E.left - F.left, y: E.top - F.top, w: E.width, h: E.height };
+  let bandArt = null;
+  if (art) {
+    bandArt = art.band;
+    cover.append(bandArt.el);
+  } else {
+    for (const k of ['backgroundImage', 'backgroundColor', 'backgroundSize', 'backgroundPosition', 'backgroundRepeat', 'backgroundBlendMode']) cover.style[k] = bs[k];
+  }
   cover.style.setProperty('--seat', p.color);
   area.append(cover);
 
@@ -306,37 +350,41 @@ function playFocus(id, opening, done) {
     tab.animate([{ transform: 'none', opacity: 1 }, { opacity: 0, offset: 0.35 }, { transform: `translate(${px(dx)}, ${px(dy)})`, opacity: 0 }], timing),
   ];
   focusAnim = anims[0];
-  // A playmat picture glides from where it sits in the band to where it sits
-  // on the board, inside the board's stitched edge, so it never jumps. The
-  // band's copy (over the top, fading) follows the same path.
-  let frame = 0;
+  // The picture on the board fills the part of the board that is showing,
+  // and the band's fading copy fills the opening, so neither jumps. Their
+  // paths aren't straight lines, so they're sampled into keyframes that run
+  // on the same clock (and the compositor) as everything else.
   if (art) {
-    const slideAnim = anims[1];
     const sx = rel === 2 ? 0 : (rel === 1 ? E.right - F.right : E.left - F.left);
     const sy = rel === 2 ? E.bottom - F.bottom : 0;
-    const coverSize = bs.backgroundSize.split(/,\s*/), coverPos = bs.backgroundPosition.split(/,\s*/);
-    const step = () => {
-      const k = slideAnim.effect.getComputedTiming().progress ?? (opening ? 1 : 0);
-      const at = (key) => art.from[key] + (art.to[key] - art.from[key]) * k;
-      const x = at('x'), y = at('y'), w = at('w'), h = at('h');
-      const size = `${w.toFixed(1)}px ${h.toFixed(1)}px`;
-      // relative to the board's surface, which is sliding along with it
-      art.body.style.setProperty('--art-size', size);
-      art.body.style.setProperty('--art-pos', `${(x - art.box.x - sx * (1 - k)).toFixed(1)}px ${(y - art.box.y - sy * (1 - k)).toFixed(1)}px`);
-      coverSize[coverSize.length - 1] = size;
-      coverPos[coverPos.length - 1] = `${x.toFixed(1)}px ${y.toFixed(1)}px`;
-      cover.style.backgroundSize = coverSize.join(', ');
-      cover.style.backgroundPosition = coverPos.join(', ');
-      frame = requestAnimationFrame(step);
-    };
-    step();
+    const lerp = (a, b, k) => a + (b - a) * k;
+    const ease = cubicBezier(0.32, 0.72, 0, 1);
+    const boardFrames = [], bandFrames = [];
+    const N = 30;
+    for (let i = 0; i <= N; i++) {
+      const k = ease(i / N);
+      const open = { x: lerp(Er.x, 0, k), y: lerp(Er.y, 0, k) };
+      open.w = lerp(Er.x + Er.w, F.width, k) - open.x;
+      open.h = lerp(Er.y + Er.h, F.height, k) - open.y;
+      const S = { x: art.box.x + sx * (1 - k), y: art.box.y + sy * (1 - k), w: art.box.w, h: art.box.h };
+      const x0 = Math.max(S.x, open.x), y0 = Math.max(S.y, open.y);
+      const x1 = Math.min(S.x + S.w, open.x + open.w), y1 = Math.min(S.y + S.h, open.y + open.h);
+      const seen = x1 - x0 > 1 && y1 - y0 > 1 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : S;
+      const r = art.fit(seen);
+      boardFrames.push({ offset: i / N, transform: art.surface.at({ x: r.x - S.x, y: r.y - S.y, w: r.w, h: r.h }) });
+      bandFrames.push({ offset: i / N, transform: art.band.at(art.fit(open)) });
+    }
+    const linear = { ...timing, easing: 'linear' };
+    anims.push(art.surface.pic.animate(boardFrames, linear), art.band.pic.animate(bandFrames, linear));
+    // hold on the first frame until the pictures are ready to draw
+    anims.forEach((a) => a.pause());
+    Promise.race([art.ready, new Promise((r) => setTimeout(r, 150))]).then(() => anims.forEach((a) => a.play()));
   }
   Promise.all(anims.map((a) => a.finished)).catch(() => {}).then(() => {
     // leave the closed board hidden behind the band before taking the clip off
     if (!opening) area.hidden = true;
     area.classList.remove('animating');
-    cancelAnimationFrame(frame);
-    if (art) { art.body.style.removeProperty('--art-size'); art.body.style.removeProperty('--art-pos'); }
+    if (art) { art.surface.el.remove(); art.body.classList.remove('art-moving'); }
     cover.remove();
     tab.remove();
     anims.forEach((a) => a.cancel());

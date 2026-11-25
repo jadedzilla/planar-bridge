@@ -158,6 +158,19 @@ button { font: inherit; color: inherit; }
 .focus-area.animating > .mat { will-change: transform; }
 .focus-cover { position: absolute; inset: 0; z-index: 1; pointer-events: none; will-change: opacity; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--seat) 35%, transparent); border-radius: 12px; }
 /* the band's own label, carried out with it as it opens into the playmat */
+/* A playmat picture while its board opens or closes (see artGlide) */
+.art-stack { position: absolute; inset: 0; overflow: hidden; isolation: isolate; pointer-events: none; }
+.art-stack > .pic { position: absolute; display: block; max-width: none; transform-origin: 0 0; will-change: transform; }
+.art-stack::before, .art-stack::after { content: ""; position: absolute; inset: 0; }
+/* the band's finish: darker, with a fine grain */
+.art-stack.band::before { background: linear-gradient(rgba(0,0,0,.35), rgba(0,0,0,.45)); }
+.art-stack.band::after { background: var(--mat-grain) 0 0 / 180px 180px; mix-blend-mode: soft-light; }
+/* the board's finish, matching .mat.has-art .mat-body::before */
+.mat-body > .art-stack.board { position: absolute; z-index: 0; inset: var(--mt) var(--mr) var(--mb) var(--ml); border-radius: 20px; }
+.art-stack.board::before { background: var(--mat-edge-light), linear-gradient(rgba(0,0,0,.14), rgba(0,0,0,.24)); }
+.art-stack.board::after { background: var(--fabric-art) 0 0 / var(--fabric-size); mix-blend-mode: soft-light; }
+/* the tape over the edge lets the moving picture show through, darkened */
+.mat.has-art .mat-body.art-moving::after { --bind-base: linear-gradient(rgba(0,0,0,.22), rgba(0,0,0,.32)); --tape-grain: linear-gradient(transparent, transparent); }
 .focus-area .edge.focus-tab { position: absolute; right: auto; bottom: auto; z-index: 2; background: none; box-shadow: none; pointer-events: none; will-change: transform, opacity; }
 .mat-close { margin-left: 6px; }
 
@@ -571,7 +584,7 @@ html, body { background: var(--table); }
     var(--fabric-art) 0 0 / var(--fabric-size),
     var(--mat-edge-light),
     linear-gradient(rgba(0,0,0,.14), rgba(0,0,0,.24)),
-    var(--mat-img) var(--art-pos, center) / var(--art-size, cover) no-repeat,
+    var(--mat-img) center / cover no-repeat,
     var(--cloth);
   background-blend-mode: soft-light, normal, normal, normal, normal;
 }
@@ -669,7 +682,7 @@ html, body { background: var(--table); }
 /* On a custom picture the tape is dyed to match: the picture carries on
    under it, a touch darker, as if the print wraps round the edge. */
 .mat.has-art .mat-body::after {
-  --bind-base: linear-gradient(rgba(0,0,0,.22), rgba(0,0,0,.32)), var(--mat-img) var(--art-pos, center) / var(--art-size, cover) no-repeat, var(--bind);
+  --bind-base: linear-gradient(rgba(0,0,0,.22), rgba(0,0,0,.32)), var(--mat-img) center / cover no-repeat, var(--bind);
   --tape-grain: var(--fabric-art);
 }
 @media (max-width: 600px) {
