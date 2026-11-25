@@ -616,9 +616,6 @@ html, body { background: var(--table); }
   border-radius: var(--r);
   padding: var(--w);
   background:
-    /* the same cloth texture as the mat, on the same grid so it carries
-       straight on across the binding (soft-light, see below) */
-    var(--tape-grain, var(--fabric)) 0 0 / var(--fabric-size),
     /* stitch rows, running clockwise; each straight row starts on a stitch
        where it leaves a corner */
     repeating-linear-gradient(90deg, var(--stitch-x)) var(--r) var(--s1) / var(--side) var(--sh),
@@ -633,6 +630,10 @@ html, body { background: var(--table); }
     var(--st-tr) right top / var(--r) var(--r),
     var(--st-br) right bottom / var(--r) var(--r),
     var(--st-bl) left bottom / var(--r) var(--r),
+    /* the same cloth texture as the mat, on the same grid so it carries
+       straight on across the binding (soft-light, see below);
+       it sits under the stitches, which lie on top of the cloth */
+    var(--tape-grain, var(--fabric)) 0 0 / var(--fabric-size),
     /* shading of the tape: straight runs, then the four corners */
     linear-gradient(to bottom, var(--roll)) center top / var(--side) var(--w),
     linear-gradient(to top, var(--roll)) center bottom / var(--side) var(--w),
@@ -644,9 +645,9 @@ html, body { background: var(--table); }
     radial-gradient(circle at 0 0, transparent var(--inner), var(--roll-c)) right bottom / var(--r) var(--r),
     var(--bind-base, var(--bind));
   /* these lists cycle if short, so spell out every layer (picture mats have
-     the most): grain first, then the rest. */
-  background-repeat: repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat;
-  background-blend-mode: soft-light, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal;
+     the most): the 12 stitch layers, then the grain, then the rest. */
+  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat;
+  background-blend-mode: normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, soft-light, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal;
   /* only the ring around the rim shows */
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
