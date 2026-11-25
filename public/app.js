@@ -161,6 +161,7 @@ function render() {
   const used = new Set();
   if (app.focus && !playerById(app.focus)) app.focus = null;
   const before = snapshotCards();
+  app.snap = before;
 
   // Edge bands
   for (const rel of [1, 2, 3]) updateEdge($(`.edge[data-rel="${rel}"]`), playerAtRel(rel), rel);
@@ -204,8 +205,16 @@ function render() {
   layoutHand();
 
   // Drop cards we no longer show anywhere
-  for (const [id, el] of app.cardEls) if (!used.has(id)) { el.remove(); app.cardEls.delete(id); }
+  for (const [id, el] of app.cardEls) {
+    if (used.has(id)) continue;
+    const was = before.get(id);
+    if (was) animateDeparture(el, id, was);
+    el.remove();
+    app.cardEls.delete(id);
+  }
   glideCards(before, mine);
+  app.prevCounts = new Map(s.players.map((p) => [p.id, { ...p.counts }]));
+  app.snap = null;
 
   renderLog();
   if (sheetKind === 'pile') renderPileSheet();
@@ -473,23 +482,81 @@ function landingSpot(sender, receiver) {
   return { x: 0.25 + r * 0.45, y: 0.03 + Math.random() * 0.06 };
 }
 
-// Animate a card that just arrived from another player, sliding in from their side.
+// Where another player's mat is, as seen from this tablet: off the edge their
+// band sits on (straight down for my own side), or their seat in the table view.
+const SPIN = { 0: 0, 1: -25, 2: 180, 3: 25 };
+function seatPoint(pid) {
+  const p = playerById(pid);
+  if (!p) return null;
+  if (app.tableView) {
+    const frame = $(`.tv-cell[data-player="${pid}"] .tv-frame`);
+    const r = frame && frame.getBoundingClientRect();
+    if (r && r.width) return { x: r.left + r.width / 2, y: r.top + r.height / 2, spin: 0, near: true };
+  }
+  const rel = relOf(p);
+  const band = rel && $(`.edge[data-rel="${rel}"]`);
+  const r = band && band.getBoundingClientRect();
+  const cx = r && r.width ? r.left + r.width / 2 : innerWidth / 2;
+  const cy = r && r.height ? r.top + r.height / 2 : innerHeight / 2;
+  const at = { 0: [innerWidth / 2, innerHeight * 1.3], 1: [-innerWidth * 0.3, cy], 2: [cx, -innerHeight * 0.35], 3: [innerWidth * 1.3, cy] }[rel];
+  return { x: at[0], y: at[1], spin: SPIN[rel] };
+}
+
+// A card that came from a mat this tablet can't see slides in from that mat's
+// side. Cards that were already in sight glide across instead (glideCards), and
+// a card you carried over yourself already landed where you let go of it.
 const arrived = new Set();
 function maybeAnimateArrival(el, c, holder) {
-  if (!c.from || holder.id !== app.s.you || c.from === app.s.you) return;
-  // A card you carried over yourself already landed where you let go of it, and
-  // in the table view every mat is in sight, so the card just glides across.
-  if (app.drops.has(c.id) || app.settled.has(c.id) || app.tableView) return;
+  if (!c.from || c.from === holder.id) return;
+  if (app.drops.has(c.id) || app.settled.has(c.id) || (app.snap && app.snap.has(c.id))) return;
   const key = c.id + ':' + c.sentAt;
   if (arrived.has(key)) return;
   arrived.add(key);
-  if (Date.now() - c.sentAt > 3000 || !el.animate) return;
-  const sender = playerById(c.from);
-  if (!sender) return;
-  const rel = relOf(sender);
-  const off = { 1: 'translate(-60vw, 0) rotate(-25deg)', 2: 'translate(0, -70vh) rotate(180deg)', 3: 'translate(60vw, 0) rotate(25deg)' }[rel];
-  if (!off) return;
-  requestAnimationFrame(() => el.animate([{ transform: off, opacity: 0.6 }, { transform: 'none', opacity: 1 }], { duration: 520, easing: 'cubic-bezier(.15,.85,.25,1)' }));
+  if (Date.now() - c.sentAt > 3000 || !el.animate || reduceMotion.matches || app.tvSwitching) return;
+  requestAnimationFrame(() => {
+    const p = el.isConnected && seatPoint(c.from);
+    const r = el.getBoundingClientRect();
+    if (!p || !r.width) return;
+    const z = zoomOf(el);
+    const dx = (p.x - (r.left + r.width / 2)) / z;
+    const dy = (p.y - (r.top + r.height / 2)) / z;
+    el.animate([
+      { translate: `${dx}px ${dy}px`, rotate: `${p.spin}deg`, scale: p.near ? '0.4' : '1', opacity: p.near ? 0 : 0.6, zIndex: 50 },
+      { translate: '0px 0px', rotate: '0deg', scale: '1', opacity: 1, zIndex: 50 },
+    ], { duration: p.near ? 460 : 560, easing: 'cubic-bezier(.15,.85,.25,1)' });
+  });
+}
+
+// A card that left for a mat this tablet can't see slides off toward it.
+function animateDeparture(el, id, was) {
+  if (app.drops.has(id) || app.settled.has(id) || reduceMotion.matches || app.tvSwitching || !el.animate) return;
+  const to = destinationOf(id, was.holder);
+  if (!to || to === was.holder) return;
+  const p = seatPoint(to);
+  if (!p) return;
+  const g = el.cloneNode(true);
+  g.classList.add('ghost', 'leaving');
+  g.classList.remove('tapped', 'dragging-src', 'lifted');
+  Object.assign(g.style, { left: was.x - was.w / 2 + 'px', top: was.y - was.h / 2 + 'px', width: was.w + 'px', height: was.h + 'px', transform: `rotate(${was.turn}deg)`, visibility: '', transition: 'none' });
+  document.body.appendChild(g);
+  const dx = p.x - was.x, dy = p.y - was.y;
+  g.animate([
+    { transform: `rotate(${was.turn}deg)`, opacity: 1 },
+    { transform: `translate(${dx}px, ${dy}px) rotate(${was.turn + p.spin}deg) scale(${p.near ? 0.4 : 0.9})`, opacity: p.near ? 0 : 1 },
+  ], { duration: p.near ? 460 : 520, easing: 'cubic-bezier(.45,.05,.6,1)', fill: 'forwards' }).onfinish = () => g.remove();
+}
+
+// Which player a card went to. Cards still in sight say so; one that went into
+// a hand or library this tablet can't see is placed by whose pile grew.
+function destinationOf(id, from) {
+  const now = findCard(id);
+  if (now) return now.player.id;
+  if (!app.prevCounts) return null;
+  const grew = app.s.players.filter((p) => {
+    const was = app.prevCounts.get(p.id);
+    return was && ['hand', 'library'].some((z) => p.counts[z] > was[z]);
+  });
+  return grew.length === 1 ? grew[0].id : null;
 }
 
 function syncChildren(parent, els) {
@@ -646,7 +713,10 @@ function snapshotCards() {
   for (const [id, el] of app.cardEls) {
     if (!el.isConnected) continue;
     const r = el.getBoundingClientRect();
-    if (r.width) snap.set(id, { x: r.left + r.width / 2, y: r.top + r.height / 2, w: el.offsetWidth * zoomOf(el) });
+    if (!r.width) continue;
+    const z = zoomOf(el);
+    const at = el.closest('[data-player]');
+    snap.set(id, { x: r.left + r.width / 2, y: r.top + r.height / 2, w: el.offsetWidth * z, h: el.offsetHeight * z, turn: cardTurn(el), holder: at && at.dataset.player });
   }
   const lib = app.matEls.get(app.s && app.s.you);
   const back = lib && $('.library-back', lib);
@@ -671,9 +741,10 @@ function settleDrops() {
     el.style.visibility = '';
     if (!el.isConnected || reduceMotion.matches || !el.animate) continue;
     const r = el.getBoundingClientRect();
-    const dx = dp.x - (r.left + r.width / 2);
-    const dy = dp.y - (r.top + r.height / 2);
-    const s = el.offsetWidth ? dp.w / (el.offsetWidth * zoomOf(el)) : 1;
+    const z = zoomOf(el);
+    const dx = (dp.x - (r.left + r.width / 2)) / z;
+    const dy = (dp.y - (r.top + r.height / 2)) / z;
+    const s = el.offsetWidth ? dp.w / (el.offsetWidth * z) : 1;
     const turn = dp.rot - cardTurn(el);
     el.animate([
       { translate: `${dx}px ${dy}px`, scale: String(s), rotate: `${turn}deg`, zIndex: 50 },
@@ -708,9 +779,10 @@ function glideCards(before, mine) {
     const dx = from.x - (r.left + r.width / 2);
     const dy = from.y - (r.top + r.height / 2);
     if (Math.hypot(dx, dy) < 3) continue;
-    const s = from.w && el.offsetWidth ? from.w / (el.offsetWidth * zoomOf(el)) : 1;
+    const z = zoomOf(el);
+    const s = from.w && el.offsetWidth ? from.w / (el.offsetWidth * z) : 1;
     el.animate(
-      [{ translate: `${dx}px ${dy}px`, scale: String(s) }, { translate: '0px 0px', scale: '1' }],
+      [{ translate: `${dx / z}px ${dy / z}px`, scale: String(s) }, { translate: '0px 0px', scale: '1' }],
       { duration: 300, easing: 'cubic-bezier(.25,.8,.3,1)' }
     );
   }
@@ -918,7 +990,7 @@ function cardEl(c, zone, holder, used) {
   if (!el) { el = makeCardEl(); app.cardEls.set(c.id, el); }
   used.add(c.id);
   paintCard(el, c, zone, holder);
-  if (zone === 'battlefield') maybeAnimateArrival(el, c, holder);
+  if (zone === 'battlefield' || zone === 'hand') maybeAnimateArrival(el, c, holder);
   return el;
 }
 
@@ -1230,12 +1302,25 @@ function tryFlick(d) {
 }
 
 function sendFlick(d, to, vx, vy) {
-  highlight(null);
-  const g = d.ghost;
   const sp = Math.hypot(vx, vy);
   const dist = Math.max(innerWidth, innerHeight) * 1.2;
-  const tx = (vx / sp) * dist;
-  const ty = (vy / sp) * dist;
+  throwGhost(d, (vx / sp) * dist, (vy / sp) * dist, vx > 0 ? 40 : -40);
+  const spot = landingSpot(me(), to);
+  send({ type: 'move', cardId: d.id, toPlayer: to.id, toZone: 'battlefield', x: spot.x, y: spot.y });
+  toast(`Sent to ${to.name}`);
+}
+
+// Dropped on another player's band: the card carries on off the table toward them.
+function sendToBand(d, to) {
+  const p = seatPoint(to.id);
+  const r = d.ghost.getBoundingClientRect();
+  if (!p) return cleanupDrag(d);
+  throwGhost(d, p.x - (r.left + r.width / 2), p.y - (r.top + r.height / 2), p.spin, 0.9);
+}
+
+function throwGhost(d, tx, ty, spin, k = 0.85) {
+  highlight(null);
+  const g = d.ghost;
   d.src.style.visibility = 'hidden';
   app.settled.set(d.id, performance.now());
   const finish = () => {
@@ -1245,12 +1330,9 @@ function sendFlick(d, to, vx, vy) {
   };
   if (g.animate) {
     g.style.transition = 'none';
-    g.animate([{ transform: g.style.transform }, { transform: `translate(${tx}px, ${ty}px) rotate(${vx > 0 ? 40 : -40}deg) scale(${(d.scale * 0.85).toFixed(3)})` }],
+    g.animate([{ transform: g.style.transform }, { transform: `translate(${tx}px, ${ty}px) rotate(${spin}deg) scale(${(d.scale * k).toFixed(3)})` }],
       { duration: 380, easing: 'cubic-bezier(.3,.6,.4,1)', fill: 'forwards' }).onfinish = finish;
   } else finish();
-  const spot = landingSpot(me(), to);
-  send({ type: 'move', cardId: d.id, toPlayer: to.id, toZone: 'battlefield', x: spot.x, y: spot.y });
-  toast(`Sent to ${to.name}`);
 }
 
 // Put a carried card back where it came from, smoothly (nowhere to drop it).
@@ -1289,6 +1371,8 @@ function finishDrag(d, x, y) {
   } else if (!commandOk(d, target)) {
     returnGhost(d);
     return toast('Only your commander goes in your command zone.');
+  } else if (target.classList.contains('edge') && target.dataset.zone === 'battlefield' && !reduceMotion.matches) {
+    sendToBand(d, playerById(target.dataset.player));
   } else releaseGhost(d);
   if (!target) return;
   // Where the card's top-left lands, at the size it will have there.
