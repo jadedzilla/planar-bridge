@@ -434,7 +434,7 @@ function snapshotCards() {
   const back = lib && $('.library-back', lib);
   if (back && back.isConnected) {
     const r = back.getBoundingClientRect();
-    snap.set('LIBRARY', { x: r.left + r.width / 2, y: r.top + r.height / 2, w: back.offsetWidth, n: me() ? me().counts.library : 0 });
+    snap.set('LIBRARY', { x: r.left + r.width / 2, y: r.top + r.height / 2, w: back.offsetWidth });
   }
   return snap;
 }
@@ -466,30 +466,95 @@ function settleDrops() {
 
 function glideCards(before, mine) {
   settleDrops();
+  // app.s already holds the new state by now, so remember the library's size ourselves.
+  const libBefore = app.libCount;
+  app.libCount = mine.counts.library;
   if (reduceMotion.matches || !Element.prototype.animate) return;
   const now = performance.now();
   for (const [id, t] of app.settled) if (now - t > 1200) app.settled.delete(id);
   const lib = before.get('LIBRARY');
-  const drew = lib && lib.n > mine.counts.library;
-  const handIds = new Set(mine.zones.hand.map((c) => c.id));
+  const drew = lib && libBefore > mine.counts.library;
+  const hand = new Map(mine.zones.hand.map((c) => [c.id, c]));
+  let flights = 0;
   for (const [id, el] of app.cardEls) {
     if (!el.isConnected || app.settled.has(id)) continue;
-    let from = before.get(id);
-    const drawn = !from && drew && handIds.has(id);
-    if (drawn) from = lib;
-    if (!from) continue;
+    const from = before.get(id);
+    if (!from) {
+      // New to my hand while my library shrank: it was drawn off the deck.
+      if (drew && hand.has(id)) flyDrawnCard(el, hand.get(id), lib, flights++);
+      continue;
+    }
     const r = el.getBoundingClientRect();
     const dx = from.x - (r.left + r.width / 2);
     const dy = from.y - (r.top + r.height / 2);
     if (Math.hypot(dx, dy) < 3) continue;
     const s = from.w && el.offsetWidth ? from.w / el.offsetWidth : 1;
     el.animate(
-      drawn
-        ? [{ translate: `${dx}px ${dy}px`, scale: String(s), rotate: '-6deg' }, { translate: `${dx * 0.4}px ${dy * 0.55 - 30}px`, scale: String(1 + (s - 1) * 0.3), rotate: '-10deg', offset: 0.45 }, { translate: '0px 0px', scale: '1', rotate: '0deg' }]
-        : [{ translate: `${dx}px ${dy}px`, scale: String(s) }, { translate: '0px 0px', scale: '1' }],
-      { duration: drawn ? 480 : 300, easing: 'cubic-bezier(.25,.8,.3,1)' }
+      [{ translate: `${dx}px ${dy}px`, scale: String(s) }, { translate: '0px 0px', scale: '1' }],
+      { duration: 300, easing: 'cubic-bezier(.25,.8,.3,1)' }
     );
   }
+}
+
+// Drawing a card: it lifts off the top of the library face down, arcs across
+// the table into its place in the fan, and turns face up as it joins the hand.
+// Only this tablet shows my hand, so nobody else sees the face.
+// Several cards at once (draw 7) leave the deck one after another.
+const DRAW_MS = 640;
+const DRAW_GAP_MS = 120;
+function flyDrawnCard(el, c, lib, i) {
+  const r = el.getBoundingClientRect();
+  const w = el.offsetWidth, h = el.offsetHeight;
+  if (!w || !h) return;
+  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  const turn = cardTurn(el);
+  const dx = lib.x - cx, dy = lib.y - cy;
+  const s0 = lib.w ? lib.w / w : 1;
+
+  const fly = document.createElement('div');
+  fly.className = 'draw-flight';
+  fly.innerHTML = '<div class="df-turn"><div class="card df-front"><span class="cname"></span><img alt="" draggable="false"></div><div class="card back df-back"></div></div>';
+  Object.assign(fly.style, { left: cx - w / 2 + 'px', top: cy - h / 2 + 'px', width: w + 'px', height: h + 'px' });
+  const owner = playerById(c.owner);
+  if (owner) fly.style.setProperty('--owner-sleeve', owner.color);
+  setBackArt(fly, owner);
+  const front = fly.querySelector('.df-front');
+  const img = front.querySelector('img');
+  const src = c.transformed && c.back ? c.back : c.img;
+  front.querySelector('.cname').textContent = c.name || '';
+  if (src) { img.onerror = () => { img.style.visibility = 'hidden'; }; img.src = src; }
+  else img.style.visibility = 'hidden';
+  document.body.appendChild(fly);
+
+  el.classList.add('incoming');
+  const delay = i * DRAW_GAP_MS;
+  // The path: off the deck, up toward you at the top of the arc, then down into the fan.
+  const path = fly.animate([
+    { translate: `${dx}px ${dy}px`, scale: String(s0), rotate: '0deg', offset: 0 },
+    { translate: `${dx}px ${dy - 6}px`, scale: String(s0 * 1.06), rotate: '-2deg', offset: 0.12, easing: 'cubic-bezier(.3,0,.4,1)' },
+    { translate: `${dx * 0.42}px ${dy * 0.5 - Math.min(60, h * 0.4)}px`, scale: String(Math.max(1.12, (s0 + 1) / 2 * 1.18)), rotate: `${turn / 2 - 6}deg`, offset: 0.55, easing: 'cubic-bezier(.35,.05,.35,1)' },
+    { translate: '0px 0px', scale: '1', rotate: `${turn}deg`, offset: 1 },
+  ], { duration: DRAW_MS, delay, fill: 'both' });
+  // The turn over: face down until it's on its way, edge-on just past the top of
+  // the arc, face up before it settles.
+  fly.firstChild.animate([
+    { transform: 'perspective(900px) rotateY(180deg)', offset: 0 },
+    { transform: 'perspective(900px) rotateY(180deg)', offset: 0.38, easing: 'cubic-bezier(.45,0,.3,1)' },
+    { transform: 'perspective(900px) rotateY(0deg)', offset: 0.9 },
+    { transform: 'perspective(900px) rotateY(0deg)', offset: 1 },
+  ], { duration: DRAW_MS, delay, fill: 'both' });
+
+  const land = () => {
+    fly.remove();
+    el.classList.remove('incoming');
+    if (!el.isConnected) return;
+    // If the hand shifted while it was in the air (another draw, a card played),
+    // finish with a short slide into the new spot.
+    const n = el.getBoundingClientRect();
+    const ox = cx - (n.left + n.width / 2), oy = cy - (n.top + n.height / 2);
+    if (Math.hypot(ox, oy) > 3) el.animate([{ translate: `${ox}px ${oy}px` }, { translate: '0px 0px' }], { duration: 180, easing: 'ease-out' });
+  };
+  path.onfinish = path.oncancel = land;
 }
 
 function makeCardEl() {
