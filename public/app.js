@@ -212,9 +212,86 @@ function matFor(p) {
   return mat;
 }
 
+// Opening another player's playmat turns their band into it: the band slides
+// out of its spot and stretches to the size of the playmat, and the board
+// slides in underneath as the band's colour and label fade away. The band's
+// spot stays empty while its board is open. Closing plays the same motion
+// backwards, shrinking the board back into the band.
+let focusAnim = null;
 function setFocus(id) {
-  app.focus = app.focus === id ? null : id;
+  if (focusAnim) return;
+  const prev = app.focus;
+  const next = prev === id ? null : id;
+  if (prev) {
+    playFocus(prev, false, () => { app.focus = next; render(); if (next) playFocus(next, true); });
+    return;
+  }
+  app.focus = next;
   render();
+  if (next) playFocus(next, true);
+}
+
+function playFocus(id, opening, done) {
+  const area = $('#focusArea');
+  const mat = area.firstElementChild;
+  const p = playerById(id);
+  const band = p && $(`.edge[data-player="${p.id}"]`);
+  if (reduceMotion.matches || !mat || !band || !area.animate) { done && done(); return; }
+  const rel = relOf(p);
+  const F = area.getBoundingClientRect();
+  const E = band.getBoundingClientRect();
+  const bs = getComputedStyle(band);
+  const out = -60; // past the playmat's edge, so its shadow isn't cut off
+  // Clip that matches the band exactly (insets may reach outside the playmat)
+  const px = (v) => `${v.toFixed(1)}px`;
+  const radii = (r) => r.map(px).join(' ');
+  const bandR = ['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft'].map((c) => parseFloat(bs[`border${c}Radius`]) || 0);
+  const shape = (ins, r) => `inset(${ins.map(px).join(' ')} round ${radii(r)})`;
+  const from = shape([E.top - F.top, F.right - E.right, F.bottom - E.bottom, E.left - F.left], bandR);
+  const to = shape([0, 0, 0, 0], [12, 12, 12, 12]);
+  const slide = rel === 2 ? 'translateY(-40%)' : rel === 1 ? 'translateX(-40%)' : 'translateX(40%)';
+
+  // A copy of the band's surface laid over the board, fading as it opens up
+  const cover = document.createElement('div');
+  cover.className = 'focus-cover';
+  for (const k of ['backgroundImage', 'backgroundColor', 'backgroundSize', 'backgroundPosition', 'backgroundRepeat', 'backgroundBlendMode']) cover.style[k] = bs[k];
+  cover.style.setProperty('--seat', p.color);
+  area.append(cover);
+
+  // The band itself (name, life and all) leaves its spot and travels to the
+  // middle of the opening, so the band is what becomes the board.
+  const tab = band.cloneNode(true);
+  tab.classList.add('focus-tab');
+  tab.classList.remove('focused', 'drop-hover');
+  delete tab.dataset.drop;
+  Object.assign(tab.style, { left: px(E.left - F.left), top: px(E.top - F.top), width: px(E.width), height: px(E.height) });
+  area.append(tab);
+  const dx = F.width / 2 - (E.left + E.width / 2 - F.left);
+  const dy = F.height / 2 - (E.top + E.height / 2 - F.top);
+
+  const timing = opening
+    ? { duration: 480, easing: 'cubic-bezier(.4, 0, .2, 1)', fill: 'both' }
+    : { duration: 400, easing: 'cubic-bezier(.4, 0, .2, 1)', fill: 'both', direction: 'reverse' };
+  area.classList.add('animating');
+  const anims = [
+    area.animate([{ clipPath: from }, { clipPath: to, offset: 0.97 }, { clipPath: shape([out, out, out, out], [12, 12, 12, 12]) }], timing),
+    mat.animate([{ transform: slide }, { transform: 'none' }], timing),
+    // its shadow only shows once the band's colour has cleared
+    mat.animate([{ boxShadow: '0 16px 40px rgba(0,0,0,0)' }, { boxShadow: '0 16px 40px rgba(0,0,0,0)', offset: 0.45 }, { boxShadow: '0 16px 40px rgba(0,0,0,.6)' }], timing),
+    cover.animate([{ opacity: 1 }, { opacity: 1, offset: 0.25 }, { opacity: 0, offset: 0.7 }, { opacity: 0 }], timing),
+    tab.animate([{ transform: 'none', opacity: 1 }, { opacity: 1, offset: 0.2 }, { opacity: 0, offset: 0.5 }, { transform: `translate(${px(dx)}, ${px(dy)})`, opacity: 0 }], timing),
+  ];
+  focusAnim = anims[0];
+  Promise.all(anims.map((a) => a.finished)).catch(() => {}).then(() => {
+    // leave the closed board hidden behind the band before taking the clip off
+    if (!opening) area.hidden = true;
+    area.classList.remove('animating');
+    cover.remove();
+    tab.remove();
+    anims.forEach((a) => a.cancel());
+    focusAnim = null;
+    done && done();
+  });
 }
 
 function updateEdge(el, p, rel) {

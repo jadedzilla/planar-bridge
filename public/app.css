@@ -152,6 +152,12 @@ button { font: inherit; color: inherit; }
 /* Another player's playmat, opened from their band */
 .focus-area { position: absolute; z-index: 35; left: var(--edge); right: var(--edge); top: var(--edge); height: 52%; display: flex; box-shadow: 0 16px 40px rgba(0,0,0,.6); border-radius: 12px; }
 .focus-area > .mat { flex: 1; }
+/* while it slides open or shut the shadow travels with the board */
+.focus-area.animating { box-shadow: none; pointer-events: none; will-change: clip-path; }
+.focus-area.animating > .mat { will-change: transform; }
+.focus-cover { position: absolute; inset: 0; z-index: 1; pointer-events: none; will-change: opacity; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--seat) 35%, transparent); border-radius: 12px; }
+/* the band's own label, carried out with it as it opens into the playmat */
+.focus-area .edge.focus-tab { position: absolute; right: auto; bottom: auto; z-index: 2; background: none; box-shadow: none; pointer-events: none; will-change: transform, opacity; }
 .mat-close { margin-left: 6px; }
 
 /* Corner controls */
@@ -368,7 +374,8 @@ html, body { background: var(--table); }
   color: var(--text);
 }
 .edge.empty { background: rgba(255,255,255,.02); box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); }
-.edge.focused { box-shadow: inset 0 0 0 2px var(--seat), 0 6px 16px rgba(0,0,0,.35); }
+/* an open board is that player's band, slid out of its spot */
+.edge.focused { visibility: hidden; }
 .edge.drop-hover { background: color-mix(in srgb, var(--accent) 30%, #23272e); }
 
 @media (max-width: 600px) {
