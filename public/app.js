@@ -797,16 +797,20 @@ function sizeGhostFor(d, t) {
 }
 
 // A carried card leans with its momentum: the leading edge dips toward the
-// table and it swings a little around the finger, then settles when you stop.
+// table, then settles when you stop.
 // The ghost's transform transition smooths every change, so it eases like a
 // real card in the air.
 const TILT_MAX = 12; // degrees
 function paintGhost(d) {
-  const t = d.snap ? { x: 0, y: 0, z: -2 } : d.tilt || { x: 0, y: 0, z: 0 }; // snapped: lies square in the pile
+  const t = d.snap ? { x: 0, y: 0 } : d.tilt || { x: 0, y: 0 };
   // The carried card's tilt also turns its foil sheen.
   d.ghost.style.setProperty('--tilt-x', (t.y / TILT_MAX).toFixed(3));
   d.ghost.style.setProperty('--tilt-y', (-t.x / TILT_MAX).toFixed(3));
-  d.ghost.style.transform = `perspective(900px) rotateX(${t.x.toFixed(2)}deg) rotateY(${t.y.toFixed(2)}deg) rotate(${(2 + t.z).toFixed(2)}deg) scale(${d.scale.toFixed(3)})`;
+  // The tilt is in screen directions and pivots on the card's centre, separate
+  // from the small turn a card gets when picked up (none once snapped to a pile).
+  const cx = (d.scale * (d.w / 2 - d.ox)).toFixed(1), cy = (d.scale * (d.h / 2 - d.oy)).toFixed(1);
+  const turn = d.snap ? 0 : 2;
+  d.ghost.style.transform = `translate(${cx}px, ${cy}px) perspective(900px) rotateX(${t.x.toFixed(2)}deg) rotateY(${t.y.toFixed(2)}deg) translate(${-cx}px, ${-cy}px) rotate(${turn}deg) scale(${d.scale.toFixed(3)})`;
 }
 
 // Over a pile (graveyard, exile, library, command zone) the carried card lets go
@@ -866,11 +870,10 @@ function tiltLoop(d) {
   }
   const clamp = (v, m) => Math.max(-m, Math.min(m, v));
   // Where the finger holds the card: held above centre, sideways motion swings the bottom back.
-  const grip = (d.oy / d.h - 0.5) * 2;
-  const want = { x: clamp(-vy * 7, TILT_MAX), y: clamp(vx * 7, TILT_MAX), z: clamp(-vx * grip * 4, 6) };
-  const t = d.tilt || (d.tilt = { x: 0, y: 0, z: 0 });
-  if (Math.abs(want.x - t.x) + Math.abs(want.y - t.y) + Math.abs(want.z - t.z) > 0.15) {
-    t.x = want.x; t.y = want.y; t.z = want.z;
+  const want = { x: clamp(-vy * 7, TILT_MAX), y: clamp(vx * 7, TILT_MAX) };
+  const t = d.tilt || (d.tilt = { x: 0, y: 0 });
+  if (Math.abs(want.x - t.x) + Math.abs(want.y - t.y) > 0.15) {
+    t.x = want.x; t.y = want.y;
     paintGhost(d);
   }
   requestAnimationFrame(() => tiltLoop(d));
