@@ -232,8 +232,8 @@ function setFocus(id) {
 }
 
 // Where a playmat picture sits in the band and on the board (both cropped to
-// fill, like background-size: cover), as a layer that can glide between them.
-function artGlide(p, area, mat, F, E) {
+// fill, like background-size: cover), in the opening's coordinates.
+function artGlide(p, mat, F, E) {
   if (!p.mat) return null;
   const img = new Image();
   img.src = matUrl(p);
@@ -250,11 +250,7 @@ function artGlide(p, area, mat, F, E) {
     const iw = img.naturalWidth * k, ih = img.naturalHeight * k;
     return { x: b.left + (w - iw) / 2 - F.left, y: b.top + (h - ih) / 2 - F.top, w: iw, h: ih };
   };
-  const from = fit(E), to = fit(box);
-  const layer = document.createElement('div');
-  layer.className = 'focus-art';
-  Object.assign(layer.style, { left: `${from.x}px`, top: `${from.y}px`, width: `${from.w}px`, height: `${from.h}px`, backgroundImage: `url("${img.src}")` });
-  return { layer, to: `translate(${(to.x - from.x).toFixed(1)}px, ${(to.y - from.y).toFixed(1)}px) scale(${(to.w / from.w).toFixed(4)})` };
+  return { body, from: fit(E), to: fit(box), box: { x: box.left - F.left, y: box.top - F.top } };
 }
 
 function playFocus(id, opening, done) {
@@ -283,16 +279,8 @@ function playFocus(id, opening, done) {
   // A copy of the band's surface laid over the board, fading as it opens up
   const cover = document.createElement('div');
   cover.className = 'focus-cover';
-  const art = artGlide(p, area, mat, F, E);
-  if (art) {
-    // a playmat picture glides from where it sits in the band to where it
-    // sits on the board, so it never jumps; only the band's shade fades
-    cover.classList.add('shade');
-    area.prepend(art.layer);
-    area.classList.add('art-glide');
-  } else {
-    for (const k of ['backgroundImage', 'backgroundColor', 'backgroundSize', 'backgroundPosition', 'backgroundRepeat', 'backgroundBlendMode']) cover.style[k] = bs[k];
-  }
+  for (const k of ['backgroundImage', 'backgroundColor', 'backgroundSize', 'backgroundPosition', 'backgroundRepeat', 'backgroundBlendMode']) cover.style[k] = bs[k];
+  const art = artGlide(p, mat, F, E);
   cover.style.setProperty('--seat', p.color);
   area.append(cover);
 
@@ -315,23 +303,42 @@ function playFocus(id, opening, done) {
     area.animate([{ clipPath: from }, { clipPath: to }], timing),
     mat.animate([{ transform: slide }, { transform: 'none' }], timing),
     cover.animate([{ opacity: 1 }, { opacity: 1, offset: 0.08 }, { opacity: 0, offset: 0.6 }, { opacity: 0 }], timing),
-    ...(art ? [art.layer.animate([{ transform: 'none' }, { transform: art.to }], timing)] : []),
     tab.animate([{ transform: 'none', opacity: 1 }, { opacity: 0, offset: 0.35 }, { transform: `translate(${px(dx)}, ${px(dy)})`, opacity: 0 }], timing),
   ];
   focusAnim = anims[0];
-  // The board's own picture (with its cloth and lighting) takes over from the
-  // gliding one once they line up, and hands back to it right away on close.
-  let reveal = null;
-  if (art && opening) reveal = setTimeout(() => area.classList.remove('art-glide'), timing.duration * 0.7);
+  // A playmat picture glides from where it sits in the band to where it sits
+  // on the board, inside the board's stitched edge, so it never jumps. The
+  // band's copy (over the top, fading) follows the same path.
+  let frame = 0;
+  if (art) {
+    const slideAnim = anims[1];
+    const sx = rel === 2 ? 0 : (rel === 1 ? E.right - F.right : E.left - F.left);
+    const sy = rel === 2 ? E.bottom - F.bottom : 0;
+    const coverSize = bs.backgroundSize.split(/,\s*/), coverPos = bs.backgroundPosition.split(/,\s*/);
+    const step = () => {
+      const k = slideAnim.effect.getComputedTiming().progress ?? (opening ? 1 : 0);
+      const at = (key) => art.from[key] + (art.to[key] - art.from[key]) * k;
+      const x = at('x'), y = at('y'), w = at('w'), h = at('h');
+      const size = `${w.toFixed(1)}px ${h.toFixed(1)}px`;
+      // relative to the board's surface, which is sliding along with it
+      art.body.style.setProperty('--art-size', size);
+      art.body.style.setProperty('--art-pos', `${(x - art.box.x - sx * (1 - k)).toFixed(1)}px ${(y - art.box.y - sy * (1 - k)).toFixed(1)}px`);
+      coverSize[coverSize.length - 1] = size;
+      coverPos[coverPos.length - 1] = `${x.toFixed(1)}px ${y.toFixed(1)}px`;
+      cover.style.backgroundSize = coverSize.join(', ');
+      cover.style.backgroundPosition = coverPos.join(', ');
+      frame = requestAnimationFrame(step);
+    };
+    step();
+  }
   Promise.all(anims.map((a) => a.finished)).catch(() => {}).then(() => {
     // leave the closed board hidden behind the band before taking the clip off
     if (!opening) area.hidden = true;
     area.classList.remove('animating');
-    clearTimeout(reveal);
-    area.classList.remove('art-glide');
+    cancelAnimationFrame(frame);
+    if (art) { art.body.style.removeProperty('--art-size'); art.body.style.removeProperty('--art-pos'); }
     cover.remove();
     tab.remove();
-    if (art) art.layer.remove();
     anims.forEach((a) => a.cancel());
     focusAnim = null;
     done && done();
