@@ -176,9 +176,15 @@ function render() {
     updateMat(mat, focusP, used);
   } else syncChildren(focus, []);
 
-  // My playmat
+  // My playmat (in the table view it sits in its seat with everyone else's)
   const myMat = matFor(mine);
-  syncChildren($('#myArea'), [myMat]);
+  if (app.tableView) {
+    syncChildren($('#myArea'), []);
+    renderTableView(used);
+  } else {
+    syncChildren($('#myArea'), [myMat]);
+    for (const cell of document.querySelectorAll('.tv-cell')) syncChildren(cell, []);
+  }
   updateMat(myMat, mine, used);
   $('#myLife').textContent = mine.life;
   $('#myLife').classList.toggle('low', mine.life <= 5);
@@ -204,6 +210,80 @@ function render() {
   renderLog();
   if (sheetKind === 'pile') renderPileSheet();
   if (sheetKind === 'seating') renderSeatingSheet();
+}
+
+// ---------- Table view ----------
+// Every playmat at once, laid out like the table seen from above: you in the
+// bottom-left seat, then clockwise the player on your left, the one across
+// (diagonally opposite) and the one on your right. Opening it pulls the camera
+// back from your own mat; closing pushes back in.
+const TV_SEATS = [1, 2, 0, 3]; // grid order: top-left, top-right, bottom-left, bottom-right
+function renderTableView(used) {
+  const cells = document.querySelectorAll('.tv-cell');
+  TV_SEATS.forEach((rel, i) => {
+    const cell = cells[i];
+    const p = rel === 0 ? me() : playerAtRel(rel);
+    cell.classList.toggle('empty', !p);
+    cell.classList.toggle('mine', rel === 0);
+    if (!p) {
+      cell.style.removeProperty('--seat');
+      let seat = $('.tv-empty', cell);
+      if (!seat) { seat = document.createElement('div'); seat.className = 'tv-empty'; seat.textContent = 'Empty seat'; }
+      syncChildren(cell, [seat]);
+      return;
+    }
+    cell.style.setProperty('--seat', p.color);
+    const mat = matFor(p);
+    syncChildren(cell, [mat]);
+    if (p !== me()) updateMat(mat, p, used);
+  });
+}
+
+let tvAnim = null;
+function setTableView(on) {
+  if (tvAnim || !app.s || on === !!app.tableView) return;
+  const game = $('#game');
+  const grid = $('.tv-grid');
+  const myMat = matFor(me());
+  const still = reduceMotion.matches || !grid.animate;
+  if (on) {
+    if (app.focus) { app.focus = null; }
+    closeSheet();
+    const from = $('.mat-body', myMat).getBoundingClientRect();
+    app.tableView = true;
+    game.classList.add('table-mode');
+    $('#tableView').hidden = false;
+    render();
+    for (const mat of app.matEls.values()) if (mat.isConnected) sizeCards(mat);
+    if (still) return;
+    const zoom = zoomOnto(grid, $('.mat-body', myMat).getBoundingClientRect(), from);
+    app.tvHome = from;
+    tvAnim = grid.animate([{ transform: zoom }, { transform: 'none' }], { duration: 700, easing: 'cubic-bezier(.3,.1,.15,1)' });
+    tvAnim.onfinish = tvAnim.oncancel = () => { tvAnim = null; };
+  } else {
+    const done = () => {
+      tvAnim = null;
+      app.tableView = false;
+      game.classList.remove('table-mode');
+      $('#tableView').hidden = true;
+      render();
+      sizeCards(myMat);
+    };
+    game.classList.add('table-leaving');
+    if (still || !app.tvHome) { game.classList.remove('table-leaving'); return done(); }
+    const zoom = zoomOnto(grid, $('.mat-body', myMat).getBoundingClientRect(), app.tvHome);
+    tvAnim = grid.animate([{ transform: 'none' }, { transform: zoom }], { duration: 600, easing: 'cubic-bezier(.5,0,.2,1)', fill: 'forwards' });
+    tvAnim.onfinish = () => { game.classList.remove('table-leaving'); done(); tvAnim && tvAnim.cancel(); grid.getAnimations().forEach((a) => a.cancel()); };
+  }
+}
+
+// The transform that makes the rect `at` (inside el) cover the rect `to`.
+function zoomOnto(el, at, to) {
+  const g = el.getBoundingClientRect();
+  const s = to.width / at.width;
+  const tx = to.left - g.left - s * (at.left - g.left);
+  const ty = to.top - g.top - s * (at.top - g.top);
+  return `translate(${tx}px, ${ty}px) scale(${s})`;
 }
 
 function matFor(p) {
@@ -418,7 +498,9 @@ function sizeCards(mat) {
   if (w <= 0 || h <= 0) return;
   const narrow = innerWidth <= 600;
   let cw = narrow ? Math.min(90, Math.max(34, w * 0.105)) : Math.min(130, Math.max(48, w * 0.078));
-  const fitH = ((h - 14 - 3 * 18 - 2 * 8) / 3) * (63 / 88);
+  // Small table-view mats on a phone lay their piles out in a row
+  const row = mat.closest('.tv-cell') && innerHeight <= 500;
+  const fitH = row ? (h - 14) * 0.55 * (63 / 88) : ((h - 14 - 3 * 18 - 2 * 8) / 3) * (63 / 88);
   cw = Math.max(30, Math.min(cw, fitH));
   mat.style.setProperty('--card-w', cw.toFixed(1) + 'px');
 }
@@ -1068,6 +1150,7 @@ function tryFlick(d) {
   const vy = (b.y - a.y) / dt;
   const speed = Math.hypot(vx, vy);
   if (speed < FLICK_SPEED || b.t - a.t > 160) return false;
+  if (app.tableView) return false; // every mat is in reach: just drag
   // Don't treat a quick drop onto a specific zone (pile, hand, band) as a flick
   // A quick drop onto a pile or another player's band is a normal drop, not a flick.
   const target = dropTargetAt(b.x, b.y);
@@ -2242,6 +2325,7 @@ $('#game').addEventListener('click', (e) => {
   if (a === 'shuffle') send({ type: 'shuffle' });
   if (a === 'log') { $('#logPanel').hidden = !$('#logPanel').hidden; renderLog(); }
   if (a === 'more') openMoreMenu();
+  if (a === 'table') setTableView(!app.tableView);
 });
 
 $('#inviteBtn').onclick = async () => {
@@ -2261,6 +2345,7 @@ function openMoreMenu() {
     <div class="sheet-actions" style="margin-top:12px">
       <button class="btn primary" data-m="deck">Load deck</button>
       <button class="btn" data-m="fullscreen">${document.fullscreenElement || document.webkitFullscreenElement ? 'Exit full screen' : 'Full screen'}</button>
+      <button class="btn" data-m="table">Table view</button>
       <button class="btn" data-m="seating">Seating</button>
       <button class="btn" data-m="playmat">Playmat</button>
       <button class="btn" data-m="log">Game log</button>
@@ -2276,6 +2361,7 @@ function openMoreMenu() {
       <li>Flick a card toward another player to send it across to their tablet. Each edge of your screen faces the player sitting on that side (set this up under Seating).</li>
       <li>You can also drag a card onto a player's edge band, or tap or long-press a card for a menu with every move.</li>
       <li>Tap a player's edge band to see their playmat. Tap Close to put it away.</li>
+      <li>Tap Table to see everyone's playmat at once, laid out like the table. You can drag cards between any of them there.</li>
       <li>Tap the Hand tab to tuck your hand away and use the whole screen.</li>
       <li>Click or tap a card on the battlefield to tap / untap it. Right-click or long-press for more.</li>
       <li>Tap your library to draw. Drag it to move the top card somewhere.</li>
@@ -2288,6 +2374,7 @@ function openMoreMenu() {
       const extra = $('#moreExtra');
       if (a === 'deck') return openDeckSheet();
       if (a === 'seating') return openSeatingSheet();
+      if (a === 'table') { closeSheet(); return setTableView(true); }
       if (a === 'playmat') return openPlaymatSheet();
       if (a === 'log') { closeSheet(); $('#logPanel').hidden = false; return renderLog(); }
       if (a === 'fullscreen') { toggleFullscreen(); return closeSheet(); }
