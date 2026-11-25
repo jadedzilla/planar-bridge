@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
-  <meta name="theme-color" content="#14171c">
+  <meta name="theme-color" content="#1b1d21">
   <meta name="application-name" content="Planar Bridge">
   <meta name="apple-mobile-web-app-title" content="Planar Bridge">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -24,14 +24,6 @@
       <label class="field">Your name
         <input id="nameInput" maxlength="24" autocomplete="nickname" placeholder="e.g. Emma">
       </label>
-      <div class="landing-box decks-box">
-        <div class="decks-head">
-          <h2>Your decks</h2>
-          <button id="addDeckBtn" class="btn small">Import a deck</button>
-        </div>
-        <p class="note">Saved on this device. Pick the deck you want to bring, and it's shuffled into your library when you sit down.</p>
-        <div id="deckList" class="deck-list"></div>
-      </div>
       <div class="landing-split">
         <div class="landing-box">
           <h2>New session</h2>
@@ -54,6 +46,19 @@
       </div>
       <p id="landingError" class="error" role="alert"></p>
     </div>
+    <!-- Your decks: a drawer docked to the bottom edge, pulled up by its tab -->
+    <aside id="deckDrawer" class="deck-drawer">
+      <button id="deckTab" class="deck-tab" aria-expanded="true" aria-controls="deckDrawerBody">
+        Decks <span id="deckTabPick" class="deck-tab-pick"></span> <span class="caret">▾</span>
+      </button>
+      <div id="deckDrawerBody" class="deck-drawer-body">
+        <div class="decks-head">
+          <h2>Your decks</h2>
+          <p class="note">Saved on this device. Tap the deck you want to bring.</p>
+        </div>
+        <div id="deckList" class="deck-shelf" role="radiogroup" aria-label="Deck to bring"></div>
+      </div>
+    </aside>
   </section>
 
   <!-- Table: your playmat fills the screen; other players are bands on the edges -->
@@ -66,7 +71,7 @@
       <div id="focusArea" class="focus-area" hidden></div>
     </main>
     <div class="hud hud-tl">
-      <button class="code-chip" id="inviteBtn" title="Share invite link"><b id="codeLabel"></b></button>
+      <button class="code-chip" id="inviteBtn" title="Share invite link"><svg class="link-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1.2 1.2"/><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1.2-1.2"/></svg><b id="codeLabel"></b></button>
     </div>
     <div class="hud hud-tr">
       <button class="btn round" data-act="draw" title="Draw a card">Draw</button>
@@ -74,7 +79,7 @@
     </div>
     <div class="hud hud-bl life me-life">
       <button data-mylife="-1" aria-label="Lose 1 life">−</button>
-      <span class="val" id="myLife"></span>
+      <span class="spindown" id="myDie"><span class="val" id="myLife"></span></span>
       <button data-mylife="1" aria-label="Gain 1 life">+</button>
     </div>
     <footer id="handBar" class="handbar" data-drop="1" data-zone="hand">

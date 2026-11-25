@@ -12,7 +12,7 @@ const { WebSocketServer } = require('ws');
 const PORT = process.env.PORT || 3000;
 const PUBLIC = path.join(__dirname, 'public');
 const MAX_PLAYERS = 4;
-const ZONES = ['library', 'hand', 'battlefield', 'graveyard', 'exile'];
+const ZONES = ['library', 'hand', 'battlefield', 'graveyard', 'exile', 'command'];
 const SEAT_COLORS = ['#e0a526', '#3b8fd9', '#d9534f', '#3fae6a'];
 const ROOM_IDLE_MS = 1000 * 60 * 60 * 6; // forget empty rooms after 6 hours
 
@@ -83,6 +83,14 @@ function sendJson(res, status, obj) {
   res.end(JSON.stringify(obj));
 }
 
+// A JPEG sent as a data URL (already shrunk on the tablet), or null if it isn't one or is too big.
+function jpegFrom(data, maxBytes) {
+  const m = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/.exec(String(data || ''));
+  if (!m) return null;
+  const buf = Buffer.from(m[1], 'base64');
+  return buf.length <= maxBytes && buf[0] === 0xff && buf[1] === 0xd8 ? buf : null;
+}
+
 // ---------- HTTP (static files) ----------
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
@@ -95,6 +103,27 @@ const server = http.createServer((req, res) => {
     return;
   }
   let p = decodeURIComponent(url.pathname);
+  // A player's custom playmat image: /mat/<session code>/<player id>
+  const mm = p.match(/^\/mat\/([A-Z0-9]{5})\/([\w-]{1,64})$/);
+  if (mm) {
+    const room = rooms.get(mm[1]);
+    const pl = room && player(room, mm[2]);
+    if (!pl || !pl.mat) { res.writeHead(404); return res.end(); }
+    res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=86400' });
+    return res.end(pl.mat);
+  }
+  // The card back of the deck a player loaded, if it has a custom one: /back/<code>/<player id>
+  const bm = p.match(/^\/back\/([A-Z0-9]{5})\/([\w-]{1,64})$/);
+  if (bm) {
+    const room = rooms.get(bm[1]);
+    const pl = room && player(room, bm[2]);
+    if (!pl || !pl.cardBack) { res.writeHead(404); return res.end(); }
+    res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=86400' });
+    return res.end(pl.cardBack);
+  }
+  // Custom card art a player brought with their deck: /art/<code>/<player id>/<art id>
+  const am = p.match(/^\/art\/([A-Z0-9]{5})\/([\w-]{1,64})\/([\w-]{1,40})$/);
+  if (am) return artRoute(req, res, am[1], am[2], am[3]);
   if (p === '/' || p.startsWith('/s/')) p = '/index.html';
   const file = path.normalize(path.join(PUBLIC, p));
   if (!file.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
@@ -104,6 +133,58 @@ const server = http.createServer((req, res) => {
     res.end(data);
   });
 });
+
+// Card art is uploaded over HTTP before the deck is loaded (one picture per
+// request, so a big deck never has to fit in one socket message). Pictures
+// are kept in memory with the session, like playmats, and only for cards in
+// the deck that player has loaded.
+const ART_MAX_BYTES = 200 * 1024; // one card picture, already shrunk on the device
+const ART_MAX_PER_PLAYER = 250;
+const ART_MAX_TOTAL = 16 * 1024 * 1024; // per player, about 100 cards of art
+function artRoute(req, res, code, playerId, artId) {
+  const room = rooms.get(code);
+  const pl = room && player(room, playerId);
+  const art = pl && pl.art && pl.art.get(artId);
+  if (req.method === 'GET' || req.method === 'HEAD') {
+    if (!art) { res.writeHead(404); return res.end(); }
+    // An art id never changes picture, so it can be cached for good.
+    res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': art.length, 'Cache-Control': 'private, max-age=31536000, immutable' });
+    return res.end(req.method === 'HEAD' ? undefined : art);
+  }
+  if (req.method !== 'POST' || !pl) { res.writeHead(pl ? 405 : 404); return res.end(); }
+  if (art) { res.writeHead(204); return res.end(); }
+  const chunks = [];
+  let size = 0;
+  req.on('data', (c) => {
+    size += c.length;
+    if (size > ART_MAX_BYTES) { res.writeHead(413); res.end(); req.destroy(); return; }
+    chunks.push(c);
+  });
+  req.on('error', () => {});
+  req.on('end', () => {
+    if (size > ART_MAX_BYTES) return;
+    const buf = Buffer.concat(chunks);
+    if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) { res.writeHead(415); return res.end(); }
+    pl.art = pl.art || new Map();
+    const full = () => pl.art.size >= ART_MAX_PER_PLAYER
+      || [...pl.art.values()].reduce((n, b) => n + b.length, 0) + buf.length > ART_MAX_TOTAL;
+    if (full()) {
+      // Make room by dropping pictures the deck on the table doesn't use
+      // (left over from a deck loaded earlier).
+      const inUse = new Set();
+      for (const c of room.cards.values()) if (c.owner === pl.id) { inUse.add(c.art); inUse.add(c.artBack); }
+      for (const id of [...pl.art.keys()]) if (!inUse.has(id)) pl.art.delete(id);
+    }
+    if (full()) { res.writeHead(507); return res.end(); }
+    pl.art.set(artId, buf);
+    room.touched = Date.now();
+    res.writeHead(201);
+    res.end();
+  });
+}
+function artPath(room, c, artId) {
+  return `/art/${room.code}/${encodeURIComponent(c.owner)}/${encodeURIComponent(artId)}`;
+}
 
 // ---------- Room state ----------
 const rooms = new Map();
@@ -164,6 +245,9 @@ function removeFromZone(room, card) {
 function placeCard(room, card, toPlayer, toZone, opts = {}) {
   const p = player(room, toPlayer);
   if (!p || !ZONES.includes(toZone)) return false;
+  // Only a commander goes in or out of the command zone, and only its owner's.
+  if ((toZone === 'command' || card.loc.zone === 'command') && !card.commander) return false;
+  if (toZone === 'command' && toPlayer !== card.owner) return false;
   removeFromZone(room, card);
   const leavingBattlefield = card.loc.zone === 'battlefield' && toZone !== 'battlefield';
   card.loc = { player: toPlayer, zone: toZone };
@@ -181,6 +265,13 @@ function placeCard(room, card, toPlayer, toZone, opts = {}) {
   else if (typeof opts.index === 'number') list.splice(clamp(opts.index, 0, list.length), 0, card.id);
   else list.push(card.id);
   return true;
+}
+
+// Put a player's commander(s) in their command zone (deck load and reset).
+function commandersHome(room, p) {
+  for (const c of room.cards.values()) {
+    if (c.owner === p.id && c.commander) placeCard(room, c, p.id, 'command');
+  }
 }
 
 function clamp(v, lo, hi) {
@@ -209,6 +300,15 @@ function removeOwnedCards(room, ownerId) {
   }
 }
 
+// The pictures for each side of a card: the owner's custom art if they brought
+// some, otherwise Scryfall's. A double-faced card keeps its second face either way.
+function faces(room, c) {
+  return {
+    img: c.art ? artPath(room, c, c.art) : c.img,
+    back: c.artBack ? artPath(room, c, c.artBack) : c.back,
+  };
+}
+
 // What a given viewer is allowed to see.
 function viewFor(room, viewerId) {
   const visible = (card) => {
@@ -221,10 +321,11 @@ function viewFor(room, viewerId) {
   const cardView = (id) => {
     const c = room.cards.get(id);
     const base = { id: c.id, owner: c.owner };
+    if (c.commander) base.commander = true;
     if (c.loc.zone === 'battlefield') Object.assign(base, { x: c.x, y: c.y, tapped: c.tapped, faceDown: c.faceDown, counters: c.counters });
     // Lets the receiving tablet animate a card sliding in from the sender's side.
     if (c.sentFrom && Date.now() - c.sentAt < 4000) Object.assign(base, { from: c.sentFrom, sentAt: c.sentAt });
-    if (visible(c)) Object.assign(base, { name: c.name, img: c.img, back: c.back, transformed: c.transformed });
+    if (visible(c)) Object.assign(base, faces(room, c), { name: c.name, transformed: c.transformed, finish: c.finish || undefined });
     return base;
   };
   return {
@@ -239,6 +340,10 @@ function viewFor(room, viewerId) {
       pos: p.pos,
       color: SEAT_COLORS[p.seat],
       life: p.life,
+      shuffles: p.shuffles || 0, // lets every tablet play the shuffle motion
+      hasCommander: [...room.cards.values()].some((c) => c.owner === p.id && c.commander),
+      mat: p.mat ? p.matV : 0, // custom playmat version, fetched from /mat/<code>/<id>
+      cardBack: p.cardBack ? p.backV : 0, // custom card back version, fetched from /back/<code>/<id>
       connected: p.connected,
       counts: Object.fromEntries(ZONES.map((z) => [z, p.zones[z].length])),
       zones: {
@@ -247,6 +352,7 @@ function viewFor(room, viewerId) {
         battlefield: p.zones.battlefield.map(cardView),
         graveyard: p.zones.graveyard.map(cardView),
         exile: p.zones.exile.map(cardView),
+        command: p.zones.command.map(cardView),
       },
     })),
   };
@@ -293,6 +399,9 @@ function handle(ws, msg) {
     case 'loadDeck': {
       const list = Array.isArray(msg.cards) ? msg.cards.slice(0, 250) : [];
       removeOwnedCards(room, me.id);
+      // Custom art only counts if the picture was uploaded first.
+      const artOf = (id) => (typeof id === 'string' && me.art && me.art.has(id) ? id : undefined);
+      const usedArt = new Set();
       for (const c of list) {
         const id = crypto.randomUUID().slice(0, 12);
         const cardObj = {
@@ -301,19 +410,26 @@ function handle(ws, msg) {
           name: cleanStr(c.name, 120),
           img: cleanImg(c.img),
           back: cleanImg(c.back),
+          finish: c.finish === 'foil' || c.finish === 'etched' ? c.finish : '',
           loc: { player: me.id, zone: 'library' },
           tapped: false, faceDown: false, transformed: false, counters: 0, x: 0, y: 0,
         };
         room.cards.set(id, cardObj);
         me.zones.library.push(id);
         if (c.commander) cardObj.commander = true;
+        const art = artOf(c.art);
+        const artBack = cardObj.back ? artOf(c.artBack) : undefined;
+        if (art) { cardObj.art = art; usedArt.add(art); }
+        if (artBack) { cardObj.artBack = artBack; usedArt.add(artBack); }
       }
+      // Let go of pictures from an earlier deck.
+      if (me.art) for (const id of [...me.art.keys()]) if (!usedArt.has(id)) me.art.delete(id);
+      // Each deck can bring its own card back; a deck without one uses the official back.
+      me.cardBack = jpegFrom(msg.cardBack, 120 * 1024);
+      me.backV = (me.backV || 0) + 1;
       shuffle(me.zones.library);
-      // GUESS: there is no command zone yet, so commanders start on the battlefield's top-left corner.
-      let ci = 0;
-      for (const c of room.cards.values()) {
-        if (c.owner === me.id && c.commander) placeCard(room, c, me.id, 'battlefield', { x: 0.01 + 0.1 * ci++, y: 0.02 });
-      }
+      me.shuffles = (me.shuffles || 0) + 1;
+      commandersHome(room, me);
       addLog(room, `${me.name} loaded a ${list.length} card deck and shuffled.`);
       break;
     }
@@ -377,13 +493,14 @@ function handle(ws, msg) {
       // Only the searching player gets the card list.
       send(ws, { type: 'library', cards: me.zones.library.map((id) => {
         const c = room.cards.get(id);
-        return { id: c.id, owner: c.owner, name: c.name, img: c.img, back: c.back };
+        return { id: c.id, owner: c.owner, name: c.name, ...faces(room, c), finish: c.finish || undefined };
       }) });
       if (!msg.quiet) addLog(room, `${me.name} is looking through their library.`);
       break;
     }
     case 'shuffle': {
       shuffle(me.zones.library);
+      me.shuffles = (me.shuffles || 0) + 1;
       addLog(room, `${me.name} shuffled their library.`);
       break;
     }
@@ -416,8 +533,10 @@ function handle(ws, msg) {
         if (c.owner === me.id) placeCard(room, c, me.id, 'library');
       }
       shuffle(me.zones.library);
+      me.shuffles = (me.shuffles || 0) + 1;
+      commandersHome(room, me);
       me.life = room.startingLife;
-      addLog(room, `${me.name} reset: all their cards back in library, shuffled, life ${me.life}.`);
+      addLog(room, `${me.name} reset: all their cards back in library (commanders in the command zone), shuffled, life ${me.life}.`);
       break;
     }
     case 'seat': {
@@ -429,6 +548,15 @@ function handle(ws, msg) {
       if (other) other.pos = target.pos;
       target.pos = pos;
       addLog(room, `${me.name} changed the seating.`);
+      break;
+    }
+    case 'playmat': {
+      // A custom playmat picture, already shrunk to a JPEG on the tablet. null removes it.
+      if (msg.data == null) { me.mat = null; me.matV = (me.matV || 0) + 1; break; }
+      const buf = jpegFrom(msg.data, 240 * 1024);
+      if (!buf) return send(ws, { type: 'error', error: "That picture couldn't be used as a playmat." });
+      me.mat = buf;
+      me.matV = (me.matV || 0) + 1;
       break;
     }
     case 'rename': {
@@ -492,10 +620,14 @@ function join(ws, room, name, playerId) {
 }
 
 // ---------- WebSocket ----------
-const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 256 * 1024 });
+// Room for a playmat picture (about 300 KB of text) plus headroom.
+const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 512 * 1024 });
 wss.on('connection', (ws) => {
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
+  // A bad or oversized message closes just this connection (the tablet reconnects)
+  // instead of taking the whole server down.
+  ws.on('error', (e) => console.error('socket error:', e.code || e.message));
   ws.on('message', (data) => {
     let msg;
     try { msg = JSON.parse(data); } catch { return; }

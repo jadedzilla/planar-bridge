@@ -41,9 +41,7 @@ button { font: inherit; color: inherit; }
 .field { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 13px; }
 .field input, .field select, textarea { font: inherit; font-size: 16px; color: var(--text); background: #11141a; border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; }
 #codeInput { text-transform: uppercase; letter-spacing: 3px; }
-.decks-box { margin-top: 14px; gap: 8px; }
-.decks-box .btn { margin-top: 0; }
-.decks-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.decks-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
 .decks-head h2 { margin: 0; }
 .note { font-size: 12px; color: var(--muted); margin: 0; }
 .deck-list { display: flex; flex-direction: column; gap: 6px; }
@@ -154,6 +152,13 @@ button { font: inherit; color: inherit; }
 /* Another player's playmat, opened from their band */
 .focus-area { position: absolute; z-index: 35; left: var(--edge); right: var(--edge); top: var(--edge); height: 52%; display: flex; box-shadow: 0 16px 40px rgba(0,0,0,.6); border-radius: 12px; }
 .focus-area > .mat { flex: 1; }
+/* while it slides open or shut the shadow travels with the board */
+.focus-area { transition: box-shadow .3s ease; }
+.focus-area.animating { box-shadow: none; transition: none; pointer-events: none; will-change: clip-path; }
+.focus-area.animating > .mat { will-change: transform; }
+.focus-cover { position: absolute; inset: 0; z-index: 1; pointer-events: none; will-change: opacity; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--seat) 35%, transparent); border-radius: 12px; }
+/* the band's own label, carried out with it as it opens into the playmat */
+.focus-area .edge.focus-tab { position: absolute; right: auto; bottom: auto; z-index: 2; background: none; box-shadow: none; pointer-events: none; will-change: transform, opacity; }
 .mat-close { margin-left: 6px; }
 
 /* Corner controls */
@@ -164,6 +169,8 @@ button { font: inherit; color: inherit; }
 .game.hand-hidden .hud-bl { bottom: 14px; }
 .hud .code-chip { background: rgba(20,23,28,.75); border: 1px dashed var(--line); border-radius: 8px; padding: 6px 10px; cursor: pointer; }
 .hud .code-chip b { letter-spacing: 2px; }
+.hud .code-chip { display: inline-flex; align-items: center; gap: 6px; }
+.hud .code-chip .link-icon { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; opacity: .7; }
 .btn.round { border-radius: 10px; height: 34px; padding: 0 12px; background: rgba(38,43,52,.9); touch-action: manipulation; }
 .me-life button { width: 46px; height: 42px; border-radius: 10px; border: 1px solid var(--line); background: #11141a; font-size: 22px; cursor: pointer; touch-action: manipulation; }
 .me-life .val { min-width: 66px; text-align: center; font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; }
@@ -222,3 +229,630 @@ button { font: inherit; color: inherit; }
   .me-life button { width: 36px; height: 34px; }
   .me-life .val { min-width: 44px; font-size: 22px; }
 }
+
+/* =====================================================================
+   Tabletop look. Physical objects with real depth and one light source
+   (from above), but kept clean: matte surfaces, no textures or ornament.
+   Everything is drawn with CSS, no image assets.
+   ===================================================================== */
+:root {
+  --table: #1b1d21;
+  --light: radial-gradient(ellipse 80% 70% at 50% 35%, rgba(255,255,255,.06), transparent 70%);
+  --raise-1: 0 1px 0 rgba(255,255,255,.07) inset, 0 1px 2px rgba(0,0,0,.35), 0 2px 6px rgba(0,0,0,.25);
+  --raise-2: 0 1px 0 rgba(255,255,255,.08) inset, 0 2px 4px rgba(0,0,0,.3), 0 10px 24px rgba(0,0,0,.35);
+}
+html, body { background: var(--table); }
+.game, .landing { background: var(--light), var(--table); }
+
+/* --- The playmat: a smooth, slightly raised mat lying on the table --- */
+.my-area > .mat { background: transparent; }
+.mat { background: var(--light), var(--table); }
+.mat-body { position: relative; --mt: 6px; --mr: 6px; --mb: 6px; --ml: 6px; }
+.my-area .mat-body { --mt: var(--edge); --mr: var(--edge); --mb: calc(var(--hand-h) + 6px); --ml: var(--edge); }
+.game.hand-hidden .my-area .mat-body { --mb: 8px; }
+.mat-body::before { content: ""; position: absolute; top: var(--mt); right: var(--mr); bottom: var(--mb); left: var(--ml); pointer-events: none; transition: bottom .25s ease; }
+.mat-body::before {
+  --cloth: color-mix(in srgb, var(--seat, #4a7a68) 9%, #262a31);
+  border-radius: 20px;
+  background:
+    var(--fabric) 0 0 / var(--fabric-size),
+    radial-gradient(ellipse 75% 65% at 50% 30%, rgba(255,255,255,.05), transparent 70%),
+    var(--cloth);
+  background-blend-mode: soft-light, normal, normal;   /* mousepad cloth texture */
+  box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, 0 -1px 0 rgba(0,0,0,.25) inset, 0 1px 1px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.35);
+}
+.mat-body > * { position: relative; z-index: 1; }
+.mat-body { padding: calc(var(--mt) + 10px) calc(var(--mr) + 10px) calc(var(--mb) + 10px) calc(var(--ml) + 10px) !important; }
+.my-area .battlefield, .battlefield { background: transparent; box-shadow: none !important; }
+.battlefield::after { color: rgba(255,255,255,.2); font-size: 15px; }
+.focus-area .mat { border-color: rgba(255,255,255,.08); }
+.focus-area .mat-head { background: rgba(20,22,26,.9); }
+
+/* Zones: faint outlines printed on the mat */
+.pile { border: 1px solid rgba(255,255,255,.1); border-radius: 10px; background: rgba(0,0,0,.08); }
+.pile-label { text-transform: uppercase; letter-spacing: 1.2px; font-size: 9px; color: rgba(255,255,255,.32); text-shadow: none; }
+
+/* --- Cards: a thin sleeve rim in the owner's colour and a soft shadow --- */
+.card {
+  --sleeve: color-mix(in srgb, var(--owner-sleeve, #3a3f48) 80%, #101114);
+  background: var(--sleeve);
+  border-radius: 5.5%/4%;
+  box-shadow: 0 1px 1px rgba(0,0,0,.35), 0 3px 8px rgba(0,0,0,.28);
+  transition: transform .3s cubic-bezier(.3,1.3,.55,1), box-shadow .2s ease;
+}
+.card img { inset: 2.2% 2.4%; width: 95.2%; height: 95.6%; border-radius: 4.5%/3.3%; }
+.card .cname { inset: 7%; }
+.card:active:not(.back) { box-shadow: 0 2px 3px rgba(0,0,0,.3), 0 12px 22px rgba(0,0,0,.35); }
+.card.tapped { transform: rotate(90deg); }
+.card.dragging-src { opacity: .22; }
+.ghost { transform: rotate(3deg) scale(1.08); box-shadow: 0 4px 8px rgba(0,0,0,.25), 0 22px 40px rgba(0,0,0,.45); }
+
+/* Card back (our own simple design): matte face with one embossed ring */
+.card.back, .library-back {
+  border: 3px solid var(--sleeve);
+  background:
+    radial-gradient(circle at 50% 50%, transparent 0 17%, rgba(255,255,255,.14) 17.5% 19%, transparent 19.5%),
+    radial-gradient(circle at 50% 51%, transparent 0 17%, rgba(0,0,0,.25) 17.5% 19%, transparent 19.5%),
+    linear-gradient(160deg, #3a3550, #26223a);
+  background-clip: padding-box;
+}
+
+/* --- Library: a stack whose height follows the card count --- */
+.library-back {
+  --sleeve: color-mix(in srgb, var(--seat, #555) 80%, #101114);
+  position: relative;
+  border-radius: 5.5%/4%;
+  box-shadow: var(--stack, none), 0 4px 10px rgba(0,0,0,.35);
+  transform: translate(calc(var(--depth, 0px) * -.5), calc(var(--depth, 0px) * -1));
+}
+.pile .card { box-shadow: var(--stack, none), 0 3px 8px rgba(0,0,0,.3); transform: translateY(calc(var(--depth, 0px) * -1)); }
+.library-back::before, .library-back::after { content: ""; position: absolute; inset: -3px; border-radius: inherit; background: inherit; border: inherit; opacity: 0; pointer-events: none; box-shadow: 0 3px 8px rgba(0,0,0,.35); }
+.library-back.shuffling::before { animation: riffle-l .75s ease-in-out; }
+.library-back.shuffling::after { animation: riffle-r .75s ease-in-out; }
+@keyframes riffle-l {
+  0%, 100% { opacity: 1; transform: none; }
+  20%, 60% { opacity: 1; transform: translate(-58%, -6%) rotate(-12deg); }
+  40% { opacity: 1; transform: translate(-48%, -2%) rotate(-6deg); }
+}
+@keyframes riffle-r {
+  0%, 100% { opacity: 1; transform: none; }
+  20%, 60% { opacity: 1; transform: translate(58%, -6%) rotate(12deg); }
+  40% { opacity: 1; transform: translate(48%, -2%) rotate(6deg); }
+}
+
+/* --- Hand: held as a fan --- */
+.hand { align-items: flex-end; padding-bottom: 4px; }
+.hand .card { transform-origin: 50% 130%; transform: translateX(var(--dx, 0px)) translateY(var(--dy, 0px)) rotate(var(--rot, 0deg)); box-shadow: -1px 2px 4px rgba(0,0,0,.3), 0 6px 14px rgba(0,0,0,.25); }
+.hand .card:hover { transform: translateX(var(--dx, 0px)) translateY(calc(var(--dy, 0px) - 16px)) rotate(var(--rot, 0deg)) scale(1.05); }
+/* While a card is carried over the hand, the others part to make room (no hover lift then). */
+.hand.parting .card:hover { transform: translateX(var(--dx, 0px)) translateY(var(--dy, 0px)) rotate(var(--rot, 0deg)); }
+.handbar { background: linear-gradient(to top, rgba(16,17,20,.92), rgba(16,17,20,.5) 70%, rgba(16,17,20,0)); -webkit-backdrop-filter: none; backdrop-filter: none; border-top: none; }
+.hand-tab { background: #2a2e35; border: none; box-shadow: var(--raise-1); }
+
+/* --- Life: a spindown die, matte with soft facets --- */
+.me-life { background: none; padding: 0; gap: 6px; }
+.me-life button, .btn.round, .hud .code-chip {
+  border: none; color: var(--text); background: linear-gradient(#30353d, #272b32); box-shadow: var(--raise-1);
+}
+.me-life button { width: 42px; height: 42px; border-radius: 50%; font-size: 22px; }
+.me-life button:active, .btn.round:active { transform: translateY(1px); box-shadow: 0 1px 2px rgba(0,0,0,.35); }
+.spindown {
+  --die: var(--my-seat, #4f7fd0);
+  position: relative; display: grid; place-items: center;
+  width: 80px; height: 90px; flex: none;
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,.35)) drop-shadow(0 8px 12px rgba(0,0,0,.3));
+}
+.spindown::before, .spindown::after { content: ""; position: absolute; inset: 0; pointer-events: none; }
+/* hexagon outline of a d20 with three soft facets, then its top face */
+.spindown::before {
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+  background: conic-gradient(from 30deg at 50% 50%,
+    color-mix(in srgb, var(--die) 78%, #000) 0 120deg,
+    color-mix(in srgb, var(--die) 62%, #000) 120deg 240deg,
+    color-mix(in srgb, var(--die) 90%, #fff) 240deg 360deg);
+}
+.spindown::after {
+  inset: 22% 14% 18%;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--die) 85%, #fff), var(--die));
+}
+.spindown .val, .me-life .spindown .val { position: relative; z-index: 1; min-width: 0; margin-top: 26%; font-size: 24px; font-weight: 700; color: #fff; text-shadow: 0 1px 1px rgba(0,0,0,.35); font-variant-numeric: tabular-nums; }
+.spindown .val.low { color: #fff; }
+.spindown:has(.val.low) { --die: var(--danger); }
+.spindown.roll { animation: die-roll .45s cubic-bezier(.3,1.4,.5,1); }
+@keyframes die-roll { 0% { transform: rotate(0) scale(1); } 40% { transform: rotate(-20deg) scale(.92); } 100% { transform: rotate(0) scale(1); } }
+
+/* Small dice on the opponent bands */
+.edge-die { --die: var(--seat, #666); width: 36px; height: 40px; filter: drop-shadow(0 1px 2px rgba(0,0,0,.4)); }
+.edge-die .val { font-size: 13px !important; margin-top: 30% !important; }
+.edge[data-rel="1"] .edge-die, .edge[data-rel="3"] .edge-die { writing-mode: horizontal-tb; }
+.edge[data-rel="1"] .edge-die .val { display: inline-block; transform: rotate(90deg); }
+.edge[data-rel="3"] .edge-die .val { display: inline-block; transform: rotate(-90deg); }
+
+/* --- Opponent bands: the near edge of their mat --- */
+.edge {
+  background: color-mix(in srgb, var(--seat, #4a7a68) 9%, #262a31);
+  border: none;
+  box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, inset 0 0 0 1px color-mix(in srgb, var(--seat, #fff) 35%, transparent), 0 6px 16px rgba(0,0,0,.35);
+  color: var(--text);
+}
+.edge.empty { background: rgba(255,255,255,.02); box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); }
+/* an open board is that player's band, slid out of its spot */
+.edge.focused { visibility: hidden; }
+.edge.drop-hover { background: color-mix(in srgb, var(--accent) 30%, #23272e); }
+
+@media (max-width: 600px) {
+  .library-back, .pile .card { width: 88%; }
+  .pile-label { letter-spacing: .5px; font-size: 8px; }
+  .spindown { width: 60px; height: 68px; }
+  .spindown .val, .me-life .spindown .val { font-size: 18px; }
+  .me-life button { width: 34px; height: 34px; font-size: 18px; }
+  .edge-die { width: 30px; height: 34px; }
+  .edge-die .val { font-size: 12px !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card, .library-back.shuffling::before, .library-back.shuffling::after, .spindown.roll { transition: none; animation: none; }
+}
+
+/* --- Library, graveyard and exile: card-sized spots, label underneath --- */
+.battlefield .card { width: var(--card-w, clamp(48px, 8.5cqw, 130px)); }
+.piles { width: auto; flex: none; gap: 8px; justify-content: flex-start; }
+.pile { flex: none; container-type: normal; display: flex; flex-direction: column; align-items: center; gap: 4px; border: none; background: none; border-radius: 0; }
+.pile .spot { position: relative; width: var(--card-w, 80px); aspect-ratio: 63 / 88; border-radius: 5.5%/4%; box-shadow: inset 0 0 0 1px rgba(255,255,255,.13); background: rgba(0,0,0,.1); }
+.pile .slot { position: absolute; inset: 0; width: 100% !important; height: 100%; }
+.pile .spot > .library-back, .pile .slot > .card { position: absolute; inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; }
+.pile .count { top: -7px; right: -7px; z-index: 4; border-radius: 9px; padding: 1px 6px; }
+.pile .pile-label, .pile:has(.card) .pile-label { display: block; position: static; font-size: 9px; letter-spacing: 1.2px; line-height: 14px; color: rgba(255,255,255,.4); }
+.pile.drop-hover { outline: none; }
+.pile.drop-hover .spot { box-shadow: inset 0 0 0 2px var(--accent); }
+@media (max-width: 600px) {
+  .library-back, .pile .card { width: 100%; }
+  .pile .pile-label, .pile:has(.card) .pile-label { font-size: 8px; letter-spacing: .5px; }
+}
+.piles { padding-top: 14px; }
+.pile .count:empty { display: none; }
+
+/* Life number centred on the die: the top face is a smaller hexagon around it */
+.spindown::after { inset: 18% 16%; clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%); }
+.spindown .val, .me-life .spindown .val, .edge-die .val { margin-top: 0 !important; text-align: center; line-height: 1; }
+
+/* --- Custom playmat pictures --- */
+.mat.has-art .mat-body::before {
+  background: linear-gradient(rgba(0,0,0,.18), rgba(0,0,0,.28)), var(--mat-img) center / cover no-repeat, var(--cloth);
+}
+.mat.has-art .pile .spot { background: rgba(0,0,0,.32); box-shadow: inset 0 0 0 1px rgba(255,255,255,.22); }
+.mat.has-art .pile-label { color: rgba(255,255,255,.75); text-shadow: 0 1px 2px rgba(0,0,0,.8); }
+.mat.has-art .battlefield::after { color: rgba(255,255,255,.6); text-shadow: 0 1px 3px rgba(0,0,0,.8); }
+.edge.has-art { background: linear-gradient(rgba(0,0,0,.35), rgba(0,0,0,.45)), var(--mat-img) center / cover no-repeat; text-shadow: 0 1px 2px rgba(0,0,0,.8); }
+.mat-preview { margin: 10px 0; aspect-ratio: 2 / 1; border-radius: 14px; display: grid; place-items: center; color: var(--muted); background: #262a31; box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, 0 6px 18px rgba(0,0,0,.35); }
+.mat-preview.has-art { background: var(--mat-img) center / cover no-repeat; }
+/* --- Home screen deck picker: a shelf of sleeved card stacks --- */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.deck-shelf {
+  --tile-w: 104px;
+  display: flex; gap: 18px; align-items: flex-start;
+  overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; scrollbar-width: thin;
+  /* room for the lift, the stack edges and the shadows */
+  margin: -6px -14px 0; padding: 34px 14px 12px; scroll-padding: 0 14px;
+}
+.deck-tile {
+  position: relative; flex: none; width: var(--tile-w); scroll-snap-align: start;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  cursor: pointer; background: none; border: none; padding: 0; color: inherit; text-align: center;
+  -webkit-tap-highlight-color: transparent;
+}
+.deck-stack, .deck-spot { position: relative; display: block; width: 100%; aspect-ratio: 63 / 88; border-radius: 5.5%/4%; }
+.deck-stack {
+  background: color-mix(in srgb, var(--sleeve) 80%, #101114);
+  box-shadow: var(--stack, none), 0 4px 10px rgba(0,0,0,.35);
+  transform: translate(calc(var(--depth, 0px) * -.5), calc(var(--depth, 0px) * -1));
+  transition: transform .3s cubic-bezier(.3,1.3,.55,1), box-shadow .2s ease;
+}
+.deck-top { position: absolute; inset: 3.5% 4%; border-radius: 4.5%/3.3%; overflow: hidden; background: #2b2f38; }
+.deck-top img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.deck-top.back {
+  background:
+    radial-gradient(circle at 50% 50%, transparent 0 17%, rgba(255,255,255,.14) 17.5% 19%, transparent 19.5%),
+    radial-gradient(circle at 50% 51%, transparent 0 17%, rgba(0,0,0,.25) 17.5% 19%, transparent 19.5%),
+    linear-gradient(160deg, #3a3550, #26223a);
+}
+.deck-qty {
+  position: absolute; top: -7px; right: -7px; z-index: 2;
+  min-width: 26px; padding: 2px 6px; border-radius: 10px; font-size: 11px; font-weight: 600; line-height: 14px;
+  background: linear-gradient(#30353d, #272b32); box-shadow: var(--raise-1); color: var(--text);
+}
+.deck-label {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  width: 100%; font-size: 12px; line-height: 1.3; color: var(--muted); transition: color .2s ease;
+}
+.deck-tile:hover .deck-stack { transform: translate(calc(var(--depth, 0px) * -.5), calc(var(--depth, 0px) * -1 - 3px)); }
+/* Picked: lifted off the table, with a thin accent rim */
+.deck-tile.picked .deck-stack {
+  transform: translate(calc(var(--depth, 0px) * -.5), calc(var(--depth, 0px) * -1 - 12px));
+  box-shadow: 0 0 0 2px var(--accent), var(--stack, none), 0 16px 26px rgba(0,0,0,.45);
+}
+.deck-tile.picked .deck-label { color: var(--text); font-weight: 600; }
+.deck-tile:has(input:focus-visible) :is(.deck-stack, .deck-spot), .deck-tile.add:focus-visible .deck-spot { outline: 2px solid var(--accent); outline-offset: 4px; }
+.deck-tile.add:focus { outline: none; }
+.deck-actions { display: flex; gap: 12px; margin-top: -4px; }
+.link-btn { background: none; border: none; padding: 4px 2px; font-size: 12px; color: var(--muted); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.link-btn:hover { color: var(--text); }
+.link-btn.danger { color: #ffb4ad; }
+/* Empty spots printed on the table: "No deck" and "Import a deck" */
+.deck-spot {
+  display: grid; place-items: center; padding: 8px; font-size: 12px; color: var(--muted);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.13); background: rgba(0,0,0,.1);
+  transition: transform .3s cubic-bezier(.3,1.3,.55,1), box-shadow .2s ease;
+}
+.deck-tile.none.picked .deck-spot { transform: translateY(-12px); box-shadow: inset 0 0 0 2px var(--accent); color: var(--text); }
+.deck-tile.add .deck-spot { box-shadow: inset 0 0 0 1px rgba(255,255,255,.13); }
+.deck-tile.add:hover .deck-spot { box-shadow: inset 0 0 0 1px rgba(255,255,255,.3); }
+.deck-spot .plus {
+  display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%;
+  font-size: 24px; line-height: 1; color: var(--text);
+  background: linear-gradient(#30353d, #272b32); box-shadow: var(--raise-1);
+}
+@media (max-width: 600px) {
+  .deck-shelf { --tile-w: 86px; gap: 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .deck-stack, .deck-spot { transition: none; }
+}
+/* keep the sideways-scrolling shelf from widening the home screen */
+.landing { grid-template-columns: minmax(0, 1fr); }
+.landing-card, .deck-drawer-body, .deck-shelf { min-width: 0; }
+
+/* --- Decks drawer: docked to the bottom edge of the home screen --- */
+.landing { --drawer-h: 300px; padding-bottom: calc(var(--drawer-h) + 24px); transition: padding-bottom .3s ease; }
+.landing.decks-hidden { padding-bottom: 56px; }
+.deck-drawer {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+  transition: transform .3s cubic-bezier(.3,1.1,.55,1);
+}
+.landing.decks-hidden .deck-drawer { transform: translateY(100%); }
+.deck-drawer-body {
+  height: var(--drawer-h);
+  padding: 12px max(16px, calc((100% - 900px) / 2)) max(10px, env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: 2px;
+  background: linear-gradient(#262a31, #22262c);
+  border-radius: 18px 18px 0 0;
+  box-shadow: 0 1px 0 rgba(255,255,255,.07) inset, 0 -2px 6px rgba(0,0,0,.25), 0 -12px 30px rgba(0,0,0,.35);
+}
+.deck-drawer .deck-shelf { margin: -8px calc(-1 * max(16px, calc((100vw - 900px) / 2))) 0; padding-left: max(16px, calc((100vw - 900px) / 2)); padding-right: max(16px, calc((100vw - 900px) / 2)); scroll-padding: 0 max(16px, calc((100vw - 900px) / 2)); }
+.deck-tab {
+  position: absolute; left: 50%; top: 0; transform: translate(-50%, -100%);
+  display: flex; align-items: center; gap: 6px; max-width: calc(100vw - 32px);
+  height: 34px; padding: 0 16px; border: none; border-radius: 12px 12px 0 0;
+  background: #262a31; color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer;
+  box-shadow: 0 1px 0 rgba(255,255,255,.07) inset, 0 -4px 10px rgba(0,0,0,.25);
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.deck-tab-pick { font-weight: 400; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.deck-tab .caret { display: inline-block; transition: transform .3s; }
+.landing.decks-hidden .deck-tab .caret { transform: rotate(180deg); }
+@media (max-width: 600px) { .landing { --drawer-h: 268px; } }
+@media (prefers-reduced-motion: reduce) { .deck-drawer, .landing { transition: none; } }
+
+/* --- Colour pips in a deck's top-left corner --- */
+.deck-pips { position: absolute; top: -6px; left: -7px; z-index: 2; display: flex; flex-direction: column; gap: 2px; }
+.pip {
+  --pip: #cfc8b4; --ink: #2a2620;
+  display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%;
+  font-size: 10px; font-weight: 700; line-height: 1; color: var(--ink);
+  background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--pip) 70%, #fff), var(--pip) 70%);
+  box-shadow: 0 0 0 1.5px #1d2026, 0 1px 2px rgba(0,0,0,.45);
+}
+.pip { position: relative; }
+.pip img { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 50%; }
+.pip-W { --pip: #f3ecd0; }
+.pip-U { --pip: #8fc0e6; --ink: #13324a; }
+.pip-B { --pip: #8f8580; --ink: #f1ece9; }
+.pip-R { --pip: #e88a68; --ink: #4a1608; }
+.pip-G { --pip: #8fbf8b; --ink: #173a16; }
+.pip-C { --pip: #c9c6c2; }
+@media (max-width: 600px) { .pip { width: 16px; height: 16px; font-size: 9px; } }
+
+/* --- Command zone: one card-sized spot in the top left of the mat --- */
+.piles.command-col { order: -1; }
+.pile.command .spot { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--seat, #fff) 45%, rgba(255,255,255,.15)); }
+
+/* Uploaded playmats get a fine grain so they read as a cloth mat, not a flat
+   photo (the edge band and preview still use the SVG noise grain). */
+:root {
+  --mat-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.95' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='.33 .33 .33 0 0  .33 .33 .33 0 0  .33 .33 .33 0 0  0 0 0 0 1'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  /* Mousepad cloth: a small seamless tile cut from a close-up photo of real
+     fabric (Emma's), with the lighting flattened. Two brightnesses so the
+     soft-light blend keeps the plain mat and picture mats at their colour. */
+  --fabric: url("fabric.jpg");
+  --fabric-art: url("fabric-art.jpg");
+  --fabric-size: 40px 46px;
+  --mat-edge-light: radial-gradient(ellipse 85% 80% at 50% 45%, transparent 60%, rgba(0,0,0,.28));
+}
+.mat.has-art .mat-body::before {
+  background:
+    var(--fabric-art) 0 0 / var(--fabric-size),
+    var(--mat-edge-light),
+    linear-gradient(rgba(0,0,0,.14), rgba(0,0,0,.24)),
+    var(--mat-img) center / cover no-repeat,
+    var(--cloth);
+  background-blend-mode: soft-light, normal, normal, normal, normal;
+}
+.edge.has-art {
+  background: var(--mat-grain) 0 0 / 180px 180px, linear-gradient(rgba(0,0,0,.35), rgba(0,0,0,.45)), var(--mat-img) center / cover no-repeat;
+  background-blend-mode: soft-light, normal, normal;
+}
+.mat-preview.has-art {
+  background: var(--mat-grain) 0 0 / 180px 180px, var(--mat-edge-light), var(--mat-img) center / cover no-repeat;
+  background-blend-mode: soft-light, normal, normal;
+}
+
+/* Stitched edge, like a cloth mousepad: a flat binding tape wraps the rim,
+   sitting a little proud of the cloth. A row of stitches runs along its outer
+   edge, and a second row sits at the bottom of a groove where the tape is
+   sewn down to the cloth. The straight runs are
+   gradients; the stitch rows round each corner are small inline SVG arcs, each
+   with a whole number of stitches so they meet the straight rows cleanly.
+   Lit from above; no images. */
+.mat-body::after {
+  --r: 20px;                     /* matches the mat's corner radius */
+  --w: 12px;                     /* binding width, out to the far side of the groove */
+  /* Stitch rows. Browsers snap gradient layers to whole pixels, so each row's
+     top edge and thickness are whole pixels too; otherwise the straight rows
+     shift a fraction of a pixel and stop lining up with the corner stitches. */
+  --so: 2px;                     /* outer row centre, in from the outer edge */
+  --gc: 10px;                    /* inner row centre: the bottom of the groove */
+  --sh: 2px;                     /* row thickness */
+  --bind: color-mix(in srgb, var(--seat, #4a7a68) 10%, #2b2f36);
+  /* a stitch: a short length of thread, rounded, between two dark needle holes */
+  /* about 4.2px long; app.js (fitStitches) stretches it slightly per edge, as
+     --spx / --spy, so a whole number of stitches fits between the corners */
+  --stitch-x: rgba(0,0,0,.4) 0, rgba(255,255,255,.08) calc(var(--spx, 4.2px) * .143), rgba(255,255,255,.22) calc(var(--spx, 4.2px) * .5), rgba(255,255,255,.08) calc(var(--spx, 4.2px) * .857), rgba(0,0,0,.4) var(--spx, 4.2px);
+  --stitch-y: rgba(0,0,0,.4) 0, rgba(255,255,255,.08) calc(var(--spy, 4.2px) * .143), rgba(255,255,255,.22) calc(var(--spy, 4.2px) * .5), rgba(255,255,255,.08) calc(var(--spy, 4.2px) * .857), rgba(0,0,0,.4) var(--spy, 4.2px);
+  /* the tape: a flat, shaded strip outside the outer stitches, pulled down into each stitch row,
+     puffed up and flat across the middle, then sloping down into the inner
+     groove; past the groove's stitches the cloth starts rising again */
+  --roll: rgba(0,0,0,.76) 0%, rgba(0,0,0,.2) 7%, rgba(0,0,0,.05) calc(var(--so) - .5px), rgba(0,0,0,.15) calc(var(--so) + .3px), rgba(255,255,255,0) calc(var(--so) + 1px), rgba(255,255,255,.07) calc(var(--so) + 1.8px), rgba(255,255,255,.07) calc(var(--gc) - 1.8px), rgba(255,255,255,0) calc(var(--gc) - 1px), rgba(0,0,0,.15) calc(var(--gc) - .3px), rgba(0,0,0,.16) calc(var(--gc) + .5px), rgba(0,0,0,0) calc(var(--gc) + 1.2px), rgba(0,0,0,0) 100%;
+  --roll-c: rgba(0,0,0,0) calc(var(--r) - var(--w) * 1), rgba(0,0,0,0) calc(var(--r) - (var(--gc) + 1.2px)), rgba(0,0,0,.16) calc(var(--r) - (var(--gc) + .5px)), rgba(0,0,0,.15) calc(var(--r) - (var(--gc) - .3px)), rgba(255,255,255,0) calc(var(--r) - (var(--gc) - 1px)), rgba(255,255,255,.07) calc(var(--r) - (var(--gc) - 1.8px)), rgba(255,255,255,.07) calc(var(--r) - (var(--so) + 1.8px)), rgba(255,255,255,0) calc(var(--r) - (var(--so) + 1px)), rgba(0,0,0,.15) calc(var(--r) - (var(--so) + .3px)), rgba(0,0,0,.05) calc(var(--r) - (var(--so) - .5px)), rgba(0,0,0,.2) calc(var(--r) - var(--w) * 0.07), rgba(0,0,0,.76) calc(var(--r) - var(--w) * 0);
+  --inner: calc(var(--r) - var(--w));
+  --side: calc(100% - var(--r) * 2);
+  --s1: calc(var(--so) - var(--sh) / 2);
+  --s2: calc(var(--gc) - var(--sh) / 2);
+  --st-tl: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'%3E%3Cg transform=''%3E%3Cdefs%3E%3ClinearGradient id='g0' gradientUnits='userSpaceOnUse' x1='17.985' y1='0' x2='22.015' y2='0'%3E%3Cstop offset='0.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3Cstop offset='0.018' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='0.036' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.054' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.071' stop-color='rgb(42,42,42)' stop-opacity='0.240'/%3E%3Cstop offset='0.089' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.107' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.125' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.143' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.500' stop-color='rgb(255,255,255)' stop-opacity='0.220'/%3E%3Cstop offset='0.857' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.875' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.893' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.911' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.928' stop-color='rgb(43,43,43)' stop-opacity='0.240'/%3E%3Cstop offset='0.946' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.964' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.982' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='1.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3C/linearGradient%3E%3Cpath id='a' d='M17.985 2.113A18 18 0 0 1 22.015 2.113' stroke='url(%23g0)' stroke-width='2'/%3E%3ClinearGradient id='g1' gradientUnits='userSpaceOnUse' x1='18.049' y1='0' x2='21.951' y2='0'%3E%3Cstop offset='0.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3Cstop offset='0.018' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='0.036' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.054' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.071' stop-color='rgb(42,42,42)' stop-opacity='0.240'/%3E%3Cstop offset='0.089' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.107' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.125' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.143' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.500' stop-color='rgb(255,255,255)' stop-opacity='0.220'/%3E%3Cstop offset='0.857' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.875' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.893' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.911' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.928' stop-color='rgb(43,43,43)' stop-opacity='0.240'/%3E%3Cstop offset='0.946' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.964' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.982' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='1.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3C/linearGradient%3E%3Cpath id='b' d='M18.049 10.192A10 10 0 0 1 21.951 10.192' stroke='url(%23g1)' stroke-width='2'/%3E%3C/defs%3E%3Cuse href='%23a' transform='rotate(-83.57 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-70.71 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-57.86 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-45.00 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-32.14 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-19.29 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-6.43 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-78.75 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-56.25 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-33.75 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-11.25 20 20)'/%3E%3C/g%3E%3C/svg%3E");
+  --st-tr: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'%3E%3Cg transform='rotate(90 10.0 10.0)'%3E%3Cdefs%3E%3ClinearGradient id='g0' gradientUnits='userSpaceOnUse' x1='17.985' y1='0' x2='22.015' y2='0'%3E%3Cstop offset='0.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3Cstop offset='0.018' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='0.036' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.054' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.071' stop-color='rgb(42,42,42)' stop-opacity='0.240'/%3E%3Cstop offset='0.089' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.107' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.125' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.143' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.500' stop-color='rgb(255,255,255)' stop-opacity='0.220'/%3E%3Cstop offset='0.857' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.875' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.893' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.911' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.928' stop-color='rgb(43,43,43)' stop-opacity='0.240'/%3E%3Cstop offset='0.946' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.964' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.982' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='1.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3C/linearGradient%3E%3Cpath id='a' d='M17.985 2.113A18 18 0 0 1 22.015 2.113' stroke='url(%23g0)' stroke-width='2'/%3E%3ClinearGradient id='g1' gradientUnits='userSpaceOnUse' x1='18.049' y1='0' x2='21.951' y2='0'%3E%3Cstop offset='0.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3Cstop offset='0.018' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='0.036' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.054' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.071' stop-color='rgb(42,42,42)' stop-opacity='0.240'/%3E%3Cstop offset='0.089' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.107' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.125' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.143' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.500' stop-color='rgb(255,255,255)' stop-opacity='0.220'/%3E%3Cstop offset='0.857' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.875' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.893' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.911' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.928' stop-color='rgb(43,43,43)' stop-opacity='0.240'/%3E%3Cstop offset='0.946' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.964' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.982' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='1.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3C/linearGradient%3E%3Cpath id='b' d='M18.049 10.192A10 10 0 0 1 21.951 10.192' stroke='url(%23g1)' stroke-width='2'/%3E%3C/defs%3E%3Cuse href='%23a' transform='rotate(-83.57 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-70.71 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-57.86 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-45.00 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-32.14 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-19.29 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-6.43 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-78.75 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-56.25 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-33.75 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-11.25 20 20)'/%3E%3C/g%3E%3C/svg%3E");
+  --st-br: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'%3E%3Cg transform='rotate(180 10.0 10.0)'%3E%3Cdefs%3E%3ClinearGradient id='g0' gradientUnits='userSpaceOnUse' x1='17.985' y1='0' x2='22.015' y2='0'%3E%3Cstop offset='0.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3Cstop offset='0.018' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='0.036' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.054' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.071' stop-color='rgb(42,42,42)' stop-opacity='0.240'/%3E%3Cstop offset='0.089' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.107' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.125' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.143' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.500' stop-color='rgb(255,255,255)' stop-opacity='0.220'/%3E%3Cstop offset='0.857' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.875' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.893' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.911' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.928' stop-color='rgb(43,43,43)' stop-opacity='0.240'/%3E%3Cstop offset='0.946' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.964' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.982' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='1.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3C/linearGradient%3E%3Cpath id='a' d='M17.985 2.113A18 18 0 0 1 22.015 2.113' stroke='url(%23g0)' stroke-width='2'/%3E%3ClinearGradient id='g1' gradientUnits='userSpaceOnUse' x1='18.049' y1='0' x2='21.951' y2='0'%3E%3Cstop offset='0.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3Cstop offset='0.018' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='0.036' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.054' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.071' stop-color='rgb(42,42,42)' stop-opacity='0.240'/%3E%3Cstop offset='0.089' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.107' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.125' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.143' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.500' stop-color='rgb(255,255,255)' stop-opacity='0.220'/%3E%3Cstop offset='0.857' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.875' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.893' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.911' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.928' stop-color='rgb(43,43,43)' stop-opacity='0.240'/%3E%3Cstop offset='0.946' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.964' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.982' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='1.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3C/linearGradient%3E%3Cpath id='b' d='M18.049 10.192A10 10 0 0 1 21.951 10.192' stroke='url(%23g1)' stroke-width='2'/%3E%3C/defs%3E%3Cuse href='%23a' transform='rotate(-83.57 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-70.71 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-57.86 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-45.00 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-32.14 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-19.29 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-6.43 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-78.75 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-56.25 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-33.75 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-11.25 20 20)'/%3E%3C/g%3E%3C/svg%3E");
+  --st-bl: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'%3E%3Cg transform='rotate(270 10.0 10.0)'%3E%3Cdefs%3E%3ClinearGradient id='g0' gradientUnits='userSpaceOnUse' x1='17.985' y1='0' x2='22.015' y2='0'%3E%3Cstop offset='0.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3Cstop offset='0.018' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='0.036' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.054' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.071' stop-color='rgb(42,42,42)' stop-opacity='0.240'/%3E%3Cstop offset='0.089' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.107' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.125' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.143' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.500' stop-color='rgb(255,255,255)' stop-opacity='0.220'/%3E%3Cstop offset='0.857' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.875' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.893' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.911' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.928' stop-color='rgb(43,43,43)' stop-opacity='0.240'/%3E%3Cstop offset='0.946' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.964' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.982' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='1.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3C/linearGradient%3E%3Cpath id='a' d='M17.985 2.113A18 18 0 0 1 22.015 2.113' stroke='url(%23g0)' stroke-width='2'/%3E%3ClinearGradient id='g1' gradientUnits='userSpaceOnUse' x1='18.049' y1='0' x2='21.951' y2='0'%3E%3Cstop offset='0.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3Cstop offset='0.018' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='0.036' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.054' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.071' stop-color='rgb(42,42,42)' stop-opacity='0.240'/%3E%3Cstop offset='0.089' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.107' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.125' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.143' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.500' stop-color='rgb(255,255,255)' stop-opacity='0.220'/%3E%3Cstop offset='0.857' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.875' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.893' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.911' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.928' stop-color='rgb(43,43,43)' stop-opacity='0.240'/%3E%3Cstop offset='0.946' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.964' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.982' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='1.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3C/linearGradient%3E%3Cpath id='b' d='M18.049 10.192A10 10 0 0 1 21.951 10.192' stroke='url(%23g1)' stroke-width='2'/%3E%3C/defs%3E%3Cuse href='%23a' transform='rotate(-83.57 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-70.71 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-57.86 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-45.00 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-32.14 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-19.29 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-6.43 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-78.75 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-56.25 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-33.75 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-11.25 20 20)'/%3E%3C/g%3E%3C/svg%3E");
+  content: ""; position: absolute; pointer-events: none; z-index: 0;
+  top: var(--mt); right: var(--mr); bottom: var(--mb); left: var(--ml);
+  border-radius: var(--r);
+  padding: var(--w);
+  background:
+    /* stitch rows, running clockwise; each straight row starts on a stitch
+       where it leaves a corner */
+    repeating-linear-gradient(90deg, var(--stitch-x)) var(--r) var(--s1) / var(--side) var(--sh),
+    repeating-linear-gradient(90deg, var(--stitch-x)) var(--r) var(--s2) / var(--side) var(--sh),
+    repeating-linear-gradient(180deg, var(--stitch-y)) right var(--s1) top var(--r) / var(--sh) var(--side),
+    repeating-linear-gradient(180deg, var(--stitch-y)) right var(--s2) top var(--r) / var(--sh) var(--side),
+    repeating-linear-gradient(270deg, var(--stitch-x)) right var(--r) bottom var(--s1) / var(--side) var(--sh),
+    repeating-linear-gradient(270deg, var(--stitch-x)) right var(--r) bottom var(--s2) / var(--side) var(--sh),
+    repeating-linear-gradient(0deg, var(--stitch-y)) left var(--s1) bottom var(--r) / var(--sh) var(--side),
+    repeating-linear-gradient(0deg, var(--stitch-y)) left var(--s2) bottom var(--r) / var(--sh) var(--side),
+    var(--st-tl) left top / var(--r) var(--r),
+    var(--st-tr) right top / var(--r) var(--r),
+    var(--st-br) right bottom / var(--r) var(--r),
+    var(--st-bl) left bottom / var(--r) var(--r),
+    /* the same cloth texture as the mat, on the same grid so it carries
+       straight on across the binding (soft-light, see below);
+       it sits under the stitches, which lie on top of the cloth */
+    var(--tape-grain, var(--fabric)) 0 0 / var(--fabric-size),
+    /* shading of the tape: straight runs, then the four corners */
+    linear-gradient(to bottom, var(--roll)) center top / var(--side) var(--w),
+    linear-gradient(to top, var(--roll)) center bottom / var(--side) var(--w),
+    linear-gradient(to right, var(--roll)) left center / var(--w) var(--side),
+    linear-gradient(to left, var(--roll)) right center / var(--w) var(--side),
+    radial-gradient(circle at 100% 100%, transparent var(--inner), var(--roll-c)) left top / var(--r) var(--r),
+    radial-gradient(circle at 0 100%, transparent var(--inner), var(--roll-c)) right top / var(--r) var(--r),
+    radial-gradient(circle at 100% 0, transparent var(--inner), var(--roll-c)) left bottom / var(--r) var(--r),
+    radial-gradient(circle at 0 0, transparent var(--inner), var(--roll-c)) right bottom / var(--r) var(--r),
+    var(--bind-base, var(--bind));
+  /* these lists cycle if short, so spell out every layer (picture mats have
+     the most): the 12 stitch layers, then the grain, then the rest. */
+  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat;
+  background-blend-mode: normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, soft-light, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal, normal;
+  /* only the ring around the rim shows */
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  transition: bottom .25s ease;
+}
+/* Out of the groove the cloth curves back up to the flat playing surface,
+   catching the light on a soft shoulder as it rises. (The first shadow sits
+   under the binding.) */
+.mat-body::before { box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, inset 0 0 0 12px rgba(0,0,0,.25), inset 0 0 7px 13px rgba(255,255,255,.06), 0 1px 1px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.35); }
+/* On a custom picture the tape is dyed to match: the picture carries on
+   under it, a touch darker, as if the print wraps round the edge. */
+.mat.has-art .mat-body::after {
+  --bind-base: linear-gradient(rgba(0,0,0,.22), rgba(0,0,0,.32)), var(--mat-img) center / cover no-repeat, var(--bind);
+  --tape-grain: var(--fabric-art);
+}
+@media (max-width: 600px) {
+  .mat-body::after {
+    --w: 9px; --gc: 7px;
+    --st-tl: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'%3E%3Cg transform=''%3E%3Cdefs%3E%3ClinearGradient id='g0' gradientUnits='userSpaceOnUse' x1='17.985' y1='0' x2='22.015' y2='0'%3E%3Cstop offset='0.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3Cstop offset='0.018' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='0.036' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.054' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.071' stop-color='rgb(42,42,42)' stop-opacity='0.240'/%3E%3Cstop offset='0.089' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.107' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.125' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.143' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.500' stop-color='rgb(255,255,255)' stop-opacity='0.220'/%3E%3Cstop offset='0.857' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.875' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.893' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.911' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.928' stop-color='rgb(43,43,43)' stop-opacity='0.240'/%3E%3Cstop offset='0.946' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.964' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.982' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='1.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3C/linearGradient%3E%3Cpath id='a' d='M17.985 2.113A18 18 0 0 1 22.015 2.113' stroke='url(%23g0)' stroke-width='2'/%3E%3ClinearGradient id='g1' gradientUnits='userSpaceOnUse' x1='17.966' y1='0' x2='22.034' y2='0'%3E%3Cstop offset='0.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3Cstop offset='0.018' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='0.036' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.054' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.071' stop-color='rgb(42,42,42)' stop-opacity='0.240'/%3E%3Cstop offset='0.089' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.107' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.125' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.143' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.500' stop-color='rgb(255,255,255)' stop-opacity='0.220'/%3E%3Cstop offset='0.857' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.875' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.893' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.911' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.928' stop-color='rgb(43,43,43)' stop-opacity='0.240'/%3E%3Cstop offset='0.946' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.964' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.982' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='1.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3C/linearGradient%3E%3Cpath id='b' d='M17.966 7.160A13 13 0 0 1 22.034 7.160' stroke='url(%23g1)' stroke-width='2'/%3E%3C/defs%3E%3Cuse href='%23a' transform='rotate(-83.57 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-70.71 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-57.86 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-45.00 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-32.14 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-19.29 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-6.43 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-81.00 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-63.00 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-45.00 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-27.00 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-9.00 20 20)'/%3E%3C/g%3E%3C/svg%3E");
+    --st-tr: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'%3E%3Cg transform='rotate(90 10.0 10.0)'%3E%3Cdefs%3E%3ClinearGradient id='g0' gradientUnits='userSpaceOnUse' x1='17.985' y1='0' x2='22.015' y2='0'%3E%3Cstop offset='0.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3Cstop offset='0.018' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='0.036' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.054' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.071' stop-color='rgb(42,42,42)' stop-opacity='0.240'/%3E%3Cstop offset='0.089' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.107' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.125' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.143' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.500' stop-color='rgb(255,255,255)' stop-opacity='0.220'/%3E%3Cstop offset='0.857' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.875' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.893' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.911' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.928' stop-color='rgb(43,43,43)' stop-opacity='0.240'/%3E%3Cstop offset='0.946' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.964' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.982' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='1.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3C/linearGradient%3E%3Cpath id='a' d='M17.985 2.113A18 18 0 0 1 22.015 2.113' stroke='url(%23g0)' stroke-width='2'/%3E%3ClinearGradient id='g1' gradientUnits='userSpaceOnUse' x1='17.966' y1='0' x2='22.034' y2='0'%3E%3Cstop offset='0.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3Cstop offset='0.018' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='0.036' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.054' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.071' stop-color='rgb(42,42,42)' stop-opacity='0.240'/%3E%3Cstop offset='0.089' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.107' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.125' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.143' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.500' stop-color='rgb(255,255,255)' stop-opacity='0.220'/%3E%3Cstop offset='0.857' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.875' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.893' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.911' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.928' stop-color='rgb(43,43,43)' stop-opacity='0.240'/%3E%3Cstop offset='0.946' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.964' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.982' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='1.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3C/linearGradient%3E%3Cpath id='b' d='M17.966 7.160A13 13 0 0 1 22.034 7.160' stroke='url(%23g1)' stroke-width='2'/%3E%3C/defs%3E%3Cuse href='%23a' transform='rotate(-83.57 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-70.71 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-57.86 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-45.00 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-32.14 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-19.29 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-6.43 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-81.00 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-63.00 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-45.00 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-27.00 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-9.00 20 20)'/%3E%3C/g%3E%3C/svg%3E");
+    --st-br: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'%3E%3Cg transform='rotate(180 10.0 10.0)'%3E%3Cdefs%3E%3ClinearGradient id='g0' gradientUnits='userSpaceOnUse' x1='17.985' y1='0' x2='22.015' y2='0'%3E%3Cstop offset='0.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3Cstop offset='0.018' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='0.036' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.054' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.071' stop-color='rgb(42,42,42)' stop-opacity='0.240'/%3E%3Cstop offset='0.089' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.107' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.125' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.143' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.500' stop-color='rgb(255,255,255)' stop-opacity='0.220'/%3E%3Cstop offset='0.857' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.875' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.893' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.911' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.928' stop-color='rgb(43,43,43)' stop-opacity='0.240'/%3E%3Cstop offset='0.946' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.964' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.982' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='1.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3C/linearGradient%3E%3Cpath id='a' d='M17.985 2.113A18 18 0 0 1 22.015 2.113' stroke='url(%23g0)' stroke-width='2'/%3E%3ClinearGradient id='g1' gradientUnits='userSpaceOnUse' x1='17.966' y1='0' x2='22.034' y2='0'%3E%3Cstop offset='0.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3Cstop offset='0.018' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='0.036' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.054' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.071' stop-color='rgb(42,42,42)' stop-opacity='0.240'/%3E%3Cstop offset='0.089' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.107' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.125' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.143' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.500' stop-color='rgb(255,255,255)' stop-opacity='0.220'/%3E%3Cstop offset='0.857' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.875' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.893' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.911' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.928' stop-color='rgb(43,43,43)' stop-opacity='0.240'/%3E%3Cstop offset='0.946' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.964' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.982' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='1.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3C/linearGradient%3E%3Cpath id='b' d='M17.966 7.160A13 13 0 0 1 22.034 7.160' stroke='url(%23g1)' stroke-width='2'/%3E%3C/defs%3E%3Cuse href='%23a' transform='rotate(-83.57 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-70.71 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-57.86 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-45.00 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-32.14 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-19.29 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-6.43 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-81.00 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-63.00 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-45.00 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-27.00 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-9.00 20 20)'/%3E%3C/g%3E%3C/svg%3E");
+    --st-bl: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'%3E%3Cg transform='rotate(270 10.0 10.0)'%3E%3Cdefs%3E%3ClinearGradient id='g0' gradientUnits='userSpaceOnUse' x1='17.985' y1='0' x2='22.015' y2='0'%3E%3Cstop offset='0.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3Cstop offset='0.018' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='0.036' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.054' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.071' stop-color='rgb(42,42,42)' stop-opacity='0.240'/%3E%3Cstop offset='0.089' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.107' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.125' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.143' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.500' stop-color='rgb(255,255,255)' stop-opacity='0.220'/%3E%3Cstop offset='0.857' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.875' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.893' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.911' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.928' stop-color='rgb(43,43,43)' stop-opacity='0.240'/%3E%3Cstop offset='0.946' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.964' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.982' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='1.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3C/linearGradient%3E%3Cpath id='a' d='M17.985 2.113A18 18 0 0 1 22.015 2.113' stroke='url(%23g0)' stroke-width='2'/%3E%3ClinearGradient id='g1' gradientUnits='userSpaceOnUse' x1='17.966' y1='0' x2='22.034' y2='0'%3E%3Cstop offset='0.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3Cstop offset='0.018' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='0.036' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.054' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.071' stop-color='rgb(42,42,42)' stop-opacity='0.240'/%3E%3Cstop offset='0.089' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.107' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.125' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.143' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.500' stop-color='rgb(255,255,255)' stop-opacity='0.220'/%3E%3Cstop offset='0.857' stop-color='rgb(255,255,255)' stop-opacity='0.080'/%3E%3Cstop offset='0.875' stop-color='rgb(149,149,149)' stop-opacity='0.120'/%3E%3Cstop offset='0.893' stop-color='rgb(96,96,96)' stop-opacity='0.160'/%3E%3Cstop offset='0.911' stop-color='rgb(64,64,64)' stop-opacity='0.200'/%3E%3Cstop offset='0.928' stop-color='rgb(43,43,43)' stop-opacity='0.240'/%3E%3Cstop offset='0.946' stop-color='rgb(27,27,27)' stop-opacity='0.280'/%3E%3Cstop offset='0.964' stop-color='rgb(16,16,16)' stop-opacity='0.320'/%3E%3Cstop offset='0.982' stop-color='rgb(7,7,7)' stop-opacity='0.360'/%3E%3Cstop offset='1.000' stop-color='rgb(0,0,0)' stop-opacity='0.400'/%3E%3C/linearGradient%3E%3Cpath id='b' d='M17.966 7.160A13 13 0 0 1 22.034 7.160' stroke='url(%23g1)' stroke-width='2'/%3E%3C/defs%3E%3Cuse href='%23a' transform='rotate(-83.57 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-70.71 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-57.86 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-45.00 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-32.14 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-19.29 20 20)'/%3E%3Cuse href='%23a' transform='rotate(-6.43 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-81.00 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-63.00 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-45.00 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-27.00 20 20)'/%3E%3Cuse href='%23b' transform='rotate(-9.00 20 20)'/%3E%3C/g%3E%3C/svg%3E");
+  }
+  .mat-body::before { box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, inset 0 0 0 9px rgba(0,0,0,.25), inset 0 0 5px 9.5px rgba(255,255,255,.06), 0 1px 1px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.35); }
+}
+
+/* Carried card: eases up and bigger when picked up, and between sizes as it
+   passes over the hand, the mat or a pile. Its position follows the finger directly. */
+.ghost { transition: transform .2s cubic-bezier(.2,.8,.3,1), box-shadow .2s ease; box-shadow: 0 1px 2px rgba(0,0,0,.3), 0 3px 8px rgba(0,0,0,.28); }
+.ghost.lifted { box-shadow: 0 6px 10px rgba(0,0,0,.22), 0 26px 44px rgba(0,0,0,.42); }
+@media (prefers-reduced-motion: reduce) { .ghost { transition: none; } }
+
+/* Official Magic card back (hosted by Scryfall) for the library, face-down and
+   hidden cards. The drawn back underneath only shows if the image can't load.
+   Double-faced cards never use it: their second face is a real card image. */
+:root {
+  --official-back: url("https://backs.scryfall.io/large/0/a/0aeebaf5-8c7d-4636-9e82-8c27447861f7.jpg");
+  --drawn-back:
+    radial-gradient(circle at 50% 50%, transparent 0 17%, rgba(255,255,255,.14) 17.5% 19%, transparent 19.5%),
+    radial-gradient(circle at 50% 51%, transparent 0 17%, rgba(0,0,0,.25) 17.5% 19%, transparent 19.5%),
+    linear-gradient(160deg, #3a3550, #26223a);
+}
+.card.back, .library-back {
+  background: var(--card-back, var(--official-back)) center / cover no-repeat, var(--drawn-back);
+  background-clip: padding-box;
+}
+.sheet-card.back, .deck-top.back, .card-back-art { background: var(--card-back, var(--official-back)) center / cover no-repeat, var(--drawn-back); }
+
+/* Card back picker in the deck sheet */
+.back-field { display: flex; gap: 14px; align-items: center; margin: 12px 0 4px; }
+.back-preview { width: 72px; flex: none; aspect-ratio: 63 / 88; border-radius: 4.5% / 3.4%; box-shadow: 0 1px 0 rgba(255,255,255,.08) inset, 0 4px 12px rgba(0,0,0,.35); }
+.back-side { flex: 1; min-width: 0; }
+.back-title { font-weight: 600; display: block; margin-bottom: 6px; }
+.back-side .row { margin: 0; }
+.back-side .note { margin: 6px 0 0; }
+
+/* --- Foil finishes ---
+   Traditional foil: the whole card is printed on a metallic layer, so every
+   part of it catches the light. Tilting it sends a broad, soft band of
+   pastel rainbow across the card, brightest where the ink is light; dark
+   ink stays dark. Straight on it just looks a little brighter and glossier.
+   Foil-etched: there's no foil laminate. The metal sits under a glossy
+   varnish on the frame only, with a fine granular sparkle; the art and text
+   box are matte. Its shine is silvery, subtle and easy to miss straight on.
+   On the table the sheen stays still unless the mouse is over that card
+   (--hx / --hy) or the tablet is tilted (--dev-x / --dev-y). A carried card
+   also shifts with where it travels (--fx / --fy) and its momentum tilt
+   (--tilt-x / --tilt-y). */
+:root { --dev-x: 0; --dev-y: 0; }
+.card { --fx: .5; --fy: .5; --fx0: .5; --fy0: .5; --tilt-x: 0; --tilt-y: 0; --hx: 0; --hy: 0; }
+.card .foil { display: none; position: absolute; inset: 2.2% 2.4%; border-radius: 4.5%/3.3%; pointer-events: none; }
+.card[data-finish] .foil {
+  --sx: calc(var(--hx) * 1.2 + var(--dev-x) * .9); --sy: calc(var(--hy) * 1.2 + var(--dev-y) * .9);
+  transition: background-position .35s ease-out; /* eases back to still when the mouse leaves */
+}
+.ghost[data-finish] .foil {
+  --sx: calc((var(--fx) - var(--fx0)) * 1.5 + var(--tilt-x) * .9 + var(--hx) * 1.2 + var(--dev-x) * .9);
+  --sy: calc((var(--fy) - var(--fy0)) * 1.5 + var(--tilt-y) * .9 + var(--hy) * 1.2 + var(--dev-y) * .9);
+  transition: background-position .12s ease-out;
+}
+.card[data-finish="foil"] .foil {
+  display: block;
+  background:
+    linear-gradient(115deg,
+      transparent 26%,
+      hsl(340 85% 78% / .5) 34%, hsl(40 90% 74% / .5) 39%, hsl(95 70% 72% / .45) 44%,
+      hsl(180 80% 72% / .5) 49%, hsl(225 85% 78% / .5) 54%, hsl(285 75% 80% / .5) 59%,
+      transparent 67%),
+    linear-gradient(115deg, transparent 42%, rgba(255,255,255,.5) 50%, transparent 58%),
+    linear-gradient(160deg, rgba(255,255,255,.14), rgba(255,255,255,0) 45%, rgba(255,255,255,.08));
+  background-size: 260% 260%, 320% 320%, 100% 100%;
+  background-position:
+    calc(50% + var(--sx) * 45%) calc(50% + var(--sy) * 45%),
+    calc(50% + var(--sx) * 60%) calc(50% + var(--sy) * 60%),
+    0 0;
+  background-repeat: no-repeat;
+  mix-blend-mode: color-dodge;
+  opacity: .42;
+}
+.card[data-finish="etched"] .foil {
+  display: block;
+  background:
+    linear-gradient(115deg, transparent 32%, rgba(236,240,248,.75) 46%, rgba(255,250,238,.85) 50%, rgba(236,240,248,.75) 54%, transparent 68%),
+    var(--foil-grain) 0 0 / 90px 90px,
+    linear-gradient(rgba(200,206,216,.16), rgba(200,206,216,.16));
+  background-size: 300% 300%, 90px 90px, 100% 100%;
+  background-position: calc(50% + var(--sx) * 50%) calc(50% + var(--sy) * 50%), 0 0, 0 0;
+  background-repeat: no-repeat, repeat, no-repeat;
+  mix-blend-mode: color-dodge;
+  opacity: .5;
+  /* Frame only: cut out the art window and the text box (modern frame proportions). */
+  -webkit-mask: linear-gradient(#000 0 0), linear-gradient(#000 0 0) 50% 19.5% / 87% 45% no-repeat, linear-gradient(#000 0 0) 50% 92% / 87% 30% no-repeat;
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0), linear-gradient(#000 0 0) 50% 19.5% / 87% 45% no-repeat, linear-gradient(#000 0 0) 50% 92% / 87% 30% no-repeat;
+  mask-composite: exclude;
+}
+:root {
+  /* Fine metallic grain for etched foil: sparse bright flecks. */
+  --foil-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='90' height='90'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.6' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .6  0 0 0 0 .6  0 0 0 0 .62  0 0 0 7 -4.9'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23f)'/%3E%3C/svg%3E");
+}
+@media (prefers-reduced-motion: reduce) { .card[data-finish] .foil { transition: none; } }
+
+/* A carried card gliding onto a pile spot, or back to the finger. */
+.ghost.snapping { transition: transform .2s cubic-bezier(.2,.8,.3,1), left .18s cubic-bezier(.2,.8,.3,1), top .18s cubic-bezier(.2,.8,.3,1), box-shadow .2s ease; }
+@media (prefers-reduced-motion: reduce) { .ghost.snapping { transition: none; } }
+
+/* --- Custom card art --- */
+/* A shallow tray to drop pictures into, with a few loose cards drawn in it */
+.art-drop {
+  display: flex; align-items: center; gap: 14px; margin: 12px 0 6px; padding: 14px;
+  border-radius: 12px; cursor: pointer; background: #1d2026;
+  box-shadow: inset 0 2px 6px rgba(0,0,0,.45), inset 0 0 0 1px rgba(255,255,255,.05), 0 1px 0 rgba(255,255,255,.05);
+  transition: box-shadow .2s ease, background .2s ease;
+}
+.art-drop:hover, .art-drop:focus-within { background: #20242b; }
+.art-drop.over { background: #232830; box-shadow: inset 0 2px 6px rgba(0,0,0,.45), inset 0 0 0 2px var(--accent); }
+.art-drop-well { position: relative; flex: none; width: 54px; height: 58px; }
+.art-drop-well span {
+  position: absolute; left: 12px; top: 2px; width: 34px; aspect-ratio: 63 / 88; border-radius: 3px;
+  background: linear-gradient(#3a404a, #2d3239); box-shadow: 0 1px 0 rgba(255,255,255,.08) inset, 0 2px 5px rgba(0,0,0,.4);
+}
+.art-drop-well span:nth-child(1) { transform: rotate(-12deg) translateX(-8px); }
+.art-drop-well span:nth-child(2) { transform: rotate(4deg); }
+.art-drop-well span:nth-child(3) { transform: rotate(14deg) translateX(9px) translateY(2px); background: linear-gradient(#4a5160, #383e49); }
+.art-drop.over .art-drop-well span:nth-child(3) { transform: rotate(8deg) translateX(6px) translateY(-4px); }
+.art-drop-well span { transition: transform .25s cubic-bezier(.3,1.3,.55,1); }
+.art-drop-text { display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
+.art-drop-text > span { color: var(--muted); font-size: 12px; }
+.art-msg:empty { display: none; }
+.art-msg { margin: 4px 0 6px; }
+.art-left { margin: 8px 0; padding: 10px 12px; border-radius: 10px; background: rgba(224,165,38,.08); box-shadow: inset 0 0 0 1px rgba(224,165,38,.25); }
+.art-left-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 13px; }
+.art-file { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.art-left-row select { flex: 0 1 55%; min-width: 0; font: inherit; font-size: 16px; color: var(--text); background: #11141a; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+.art-tools { display: flex; align-items: center; gap: 10px; margin: 12px 0 10px; }
+.art-tools input { flex: 1; min-width: 0; font: inherit; font-size: 16px; color: var(--text); background: #11141a; border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
+.art-tools .note { flex: none; }
+/* The deck's cards laid out on the felt; your own art gets a thin accent rim */
+.art-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 14px 12px; padding: 4px 2px 6px; }
+.art-slot { margin: 0; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.art-card {
+  position: relative; display: block; width: 100%; aspect-ratio: 63 / 88; padding: 0; border: none; cursor: pointer;
+  border-radius: 4.5% / 3.4%; overflow: hidden; background: #2b2f38; color: var(--muted);
+  box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, 0 2px 4px rgba(0,0,0,.35), 0 6px 14px rgba(0,0,0,.25);
+  transition: transform .2s cubic-bezier(.3,1.3,.55,1), box-shadow .2s ease;
+}
+.art-card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.art-card:hover { transform: translateY(-3px); box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, 0 6px 10px rgba(0,0,0,.35), 0 12px 22px rgba(0,0,0,.3); }
+.art-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.art-slot.custom .art-card { box-shadow: 0 0 0 2px var(--accent), 0 2px 4px rgba(0,0,0,.35), 0 6px 14px rgba(0,0,0,.25); }
+.art-blank { display: grid; place-items: center; height: 100%; padding: 8px; font-size: 11px; }
+.art-face {
+  position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%);
+  padding: 1px 7px; border-radius: 8px; font-size: 10px; font-weight: 600; color: var(--text);
+  background: rgba(20,22,26,.82); box-shadow: 0 1px 3px rgba(0,0,0,.4);
+}
+.art-slot figcaption { display: flex; align-items: baseline; gap: 4px; font-size: 11px; line-height: 1.25; color: var(--muted); min-width: 0; }
+.art-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.art-slot.custom .art-name { color: var(--text); }
+.art-slot .link-btn { flex: none; font-size: 11px; padding: 0; }
+.deck-actions { gap: 8px; }
+@media (max-width: 600px) {
+  .art-grid { grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 12px 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .art-card, .art-drop-well span { transition: none; }
+}
+
+/* Drawing a card: it flies face down from the library and turns over as it
+   joins the hand. Two faces back to back; the inner layer does the turning. */
+.draw-flight { position: fixed; z-index: 1000; pointer-events: none; will-change: translate, scale, rotate; }
+.draw-flight .df-turn { position: absolute; inset: 0; transform-style: preserve-3d; will-change: transform; }
+.draw-flight .card { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; transition: none; cursor: default;
+  -webkit-backface-visibility: hidden; backface-visibility: hidden;
+  box-shadow: 0 4px 8px rgba(0,0,0,.25), 0 16px 30px rgba(0,0,0,.38); }
+.draw-flight .df-back { transform: rotateY(180deg); }
+.hand .card.incoming { visibility: hidden; }
